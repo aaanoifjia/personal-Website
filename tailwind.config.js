@@ -18,15 +18,11 @@ export default {
         clickMove: 'clickMove 10s ease-in-out',
         attackMove: 'attackMove var(--attack_time) ease forwards',
       },
+      fontFamily: {
+        handjet: ['Handjet', 'sans-serif'], // Define the custom font family
+      },
     },
     backgroundImage: {
-      'radial-0': 'radial-gradient(farthest-side,#eb8c82, rgba(235,105,78,0))',
-      'radial-1': 'radial-gradient(farthest-side,#f4b48c, rgba(235,105,78,0))',
-      'radial-2': 'radial-gradient(farthest-side,#fef79a, rgba(235,105,78,0))',
-      'radial-3': 'radial-gradient(farthest-side,#c8edbd, rgba(235,105,78,0))',
-      'radial-4': 'radial-gradient(farthest-side,#c1f1ff, rgba(235,105,78,0))',
-      'radial-5': 'radial-gradient(farthest-side,#adc6ff, rgba(235,105,78,0))',
-      'radial-6': 'radial-gradient(farthest-side,#e3baef, rgba(235,105,78,0))',
     },
   },
   plugins: [],
