@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom"
 import Navbar from "./components/nav"; 
 import Home from "./pages/Home";
 import Bed from "./pages/bed"
+import NewYear from "./pages/NewYear";
 
 function App() {
   return (
@@ -12,6 +13,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/bed" element={<Bed />} />
+          <Route path='/newYear' element={<NewYear />} />
         </Routes>
       </div>
     </>
