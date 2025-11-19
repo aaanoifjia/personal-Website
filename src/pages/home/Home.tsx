@@ -24,42 +24,42 @@ function Home() {
     {
       position: "left-4 bottom-0",
       delay: 0,
-      duration: 12,
+      duration: 20,
       startY: 100,
       endY: -1000,
     },
     {
       position: "left-16 bottom-0",
       delay: 0.6,
-      duration: 13,
+      duration: 22,
       startY: 100,
       endY: -1000,
     },
     {
       position: "left-32 bottom-0",
       delay: 1.2,
-      duration: 11,
+      duration: 18,
       startY: 100,
       endY: -1000,
     },
     {
       position: "right-10 bottom-0",
       delay: 0.4,
-      duration: 14,
+      duration: 24,
       startY: 100,
       endY: -1000,
     },
     {
       position: "right-4 bottom-0",
       delay: 0.9,
-      duration: 12.5,
+      duration: 21,
       startY: 100,
       endY: -1000,
     },
     {
       position: "right-16 bottom-0",
       delay: 1.5,
-      duration: 15,
+      duration: 25,
       startY: 100,
       endY: -1000,
     },
@@ -160,7 +160,7 @@ function Home() {
             <div
               key={index}
               ref={(el) => (bubbleRefs.current[index] = el)}
-              className={`absolute ${bubble.position} w-15 h-15 rounded-full bg-[radial-gradient(circle,rgba(34,197,94,0.9)_20%,rgba(22,163,74,0.7)_50%,rgba(5,150,105,0.4)_75%,rgba(0,0,0,0)_100%)] shadow-[0_0_40px_rgba(34,197,94,0.8),0_0_80px_rgba(22,163,74,0.5),inset_0_0_20px_rgba(34,197,94,0.3)] flex items-center justify-center text-center font-handjet text-xs text-green-200 drop-shadow-[0_0_8px_rgba(34,197,94,0.9)] animate-pulse`}
+              className={`absolute ${bubble.position} w-15 h-15 rounded-full bg-[radial-gradient(circle,rgba(34,197,94,0.5)_20%,rgba(22,163,74,0.35)_50%,rgba(5,150,105,0.2)_75%,rgba(0,0,0,0)_100%)] shadow-[0_0_30px_rgba(34,197,94,0.4),0_0_60px_rgba(22,163,74,0.25),inset_0_0_15px_rgba(34,197,94,0.2)] flex items-center justify-center text-center font-handjet text-xs text-green-300 drop-shadow-[0_0_6px_rgba(34,197,94,0.5)]`}
             >
               hi
             </div>

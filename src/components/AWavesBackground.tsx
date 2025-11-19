@@ -88,17 +88,25 @@ const AWavesBackground = ({ scrollOffset = 0 }: AWavesBackgroundProps) => {
           "stop"
         );
         stopCenter.setAttribute("offset", "0%");
-        stopCenter.setAttribute("stop-color", "rgb(242, 236, 211)");
+        stopCenter.setAttribute("stop-color", "rgba(255, 255, 255,0.2)");
 
         const stopOuter = document.createElementNS(
           "http://www.w3.org/2000/svg",
           "stop"
         );
-        stopOuter.setAttribute("offset", "100%");
+        stopOuter.setAttribute("offset", "70%");
         stopOuter.setAttribute("stop-color", "rgb(243, 217, 186)");
+
+        const stopOutermost = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "stop"
+        );
+        stopOutermost.setAttribute("offset", "100%");
+        stopOutermost.setAttribute("stop-color", "rgba(0, 0, 0, 0)");
 
         gradient.appendChild(stopCenter);
         gradient.appendChild(stopOuter);
+        gradient.appendChild(stopOutermost);
         defs.appendChild(gradient);
         gradientRef.current = gradient;
 
@@ -164,8 +172,8 @@ const AWavesBackground = ({ scrollOffset = 0 }: AWavesBackgroundProps) => {
       state.paths.forEach((path) => path.remove());
       state.paths = [];
 
-      const xGap = 2;
-      const yGap = 50;
+      const xGap = 30;
+      const yGap = 20;
       const strokeWidth = 50;
       const maxCursorOffset = 100; // 线条向下弯曲的最大偏移
       // 增加高度以容纳线条向下弯曲，确保不会被截断
