@@ -1,21 +1,22 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom"
-import Navbar from "./components/nav"; 
+import { Route, Routes } from "react-router-dom";
+import Navbar from "./components/nav";
 import Home from "./pages/Home";
-import Bed from "./pages/bed"
+import Bed from "./pages/bed/bed";
 
 function App() {
   return (
     <>
-    
-      <Navbar />
-      <div className="min-h-screen m-w-screen relative top-[80px] md:top-0 md:left-[80px]">
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/bed" element={<Bed />} />
-        </Routes>
+      <div className="flex min-h-screen w-screen min-w-screen">
+        <Navbar />
+        <div className=" min-h-screen pl-0 pt-[80px] md:pl-[80px] w-full top-[80px] md:pt-0">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/bed" element={<Bed />} />
+          </Routes>
+        </div>
       </div>
     </>
-  )
+  );
 }
 
 export default App;

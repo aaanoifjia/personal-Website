@@ -1,5 +1,76 @@
-@import url('https://fonts.googleapis.com/css2?family=Handjet&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Handjet&display=swap");
+@import "tailwindcss";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@theme {
+  --font-handjet: "Handjet", sans-serif;
+  --color-transparent-yellow: rgba(251, 251, 138, 0.5);
+  --color-transparent-pink: rgba(255, 135, 242, 0.5);
+  --color-transparent-blue: rgba(123, 233, 255, 0.5);
+}
+
+@keyframes spin-inverse {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes orb-float {
+  0% {
+    transform: translateY(0px) scale(1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: translateY(-24px) scale(1.05);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translateY(0px) scale(1);
+    opacity: 0.7;
+  }
+}
+
+@utility flex-center {
+  @apply flex justify-center items-center;
+}
+
+@utility animate-spin-slow {
+  animation: spin 8s linear infinite;
+}
+@utility animate-spin-mid {
+  animation: spin 5s linear infinite;
+}
+@utility animate-spin-fast {
+  animation: spin 2s linear infinite;
+}
+@utility animate-spin-slow-inverse {
+  animation: spin-inverse 8s linear infinite;
+}
+@utility animate-spin-mid-inverse {
+  animation: spin-inverse 5s linear infinite;
+}
+@utility animate-spin-fast-inverse {
+  animation: spin-inverse 2s linear infinite;
+}
+
+@utility animate-orb-float {
+  animation: orb-float 10s ease-in-out infinite;
+}
+
+@utility bg-gradient-radial {
+  background-image: radial-gradient(var(--tw-gradient-stops));
+}
+@utility bg-gradient-radial-left {
+  background-image: radial-gradient(ellipse at left, var(--tw-gradient-stops));
+}
+@utility bg-gradient-radial-right {
+  background-image: radial-gradient(ellipse at right, var(--tw-gradient-stops));
+}
+@utility bg-gradient-radial-top {
+  background-image: radial-gradient(
+    ellipse at 80% 20%,
+    var(--tw-gradient-stops)
+  );
+}

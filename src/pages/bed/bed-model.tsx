@@ -1,14 +1,13 @@
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, useGLTF } from '@react-three/drei';
-import { GLTFLoader } from 'three/examples/jsm/Addons.js';
+import { useEffect, useState } from 'react';
 import * as THREE from "three";
-import React, { useState, useEffect } from "react";
+import { EXRLoader, GLTFLoader, RGBELoader } from 'three/examples/jsm/Addons.js';
+import { Bedmodel } from '../../three/bed-model';
+import { OrbitControls } from '@react-three/drei';
+import { Canvas } from '@react-three/fiber';
 
-function Model(){
-  
-}
 
-const ModelViewer: React.FC = () => {
+
+export default function BedModelView() {
   const [scene, setScene] = useState<THREE.Scene | null>(null);
   const [cameraConfig, setCameraConfig] = useState<{
     position: [number, number, number];
@@ -16,35 +15,20 @@ const ModelViewer: React.FC = () => {
     near: number;
     far: number;
   }>({
-    position: [0, 0, 5], // Default camera position
+    position: [100, -40, 50], // Default camera position
     fov: 30,
     near: 0.1,
     far: 1000,
   });
 
   useEffect(() => {
-    const path = "/bed/scene-6.gltf";
+    const path = "/bed/bed-model.gltf";
     const loader = new GLTFLoader();
 
     const loadModel = async () => {
       try {
         const loadedData = await loader.loadAsync(path);
-
         const tempScene = new THREE.Scene();
-
-        // Load the first geometry and create a model
-        console.log(loadedData.scene.children)
-        loadedData.scene.traverse((child) => {
-          const geometry = (child as THREE.Mesh).geometry;
-          const material = new THREE.MeshStandardMaterial({ color: 0xff6347 });
-          const model = new THREE.Mesh(geometry, material);
-          tempScene.add(model);
-          model.position.set(-200, 0, 60)
-        })
-
-        const lightHelper = new THREE.PointLightHelper(pointLight)
-        const gridHelper = new THREE.GridHelper(200, 50);
-        tempScene.add(lightHelper, gridHelper)
 
         // Configure the camera
         const { cameras } = loadedData;
@@ -59,7 +43,12 @@ const ModelViewer: React.FC = () => {
         } else {
           console.error("No camera found in the scene. Using default camera.");
         }
-        console.log(tempScene)
+        const skyTexture = new RGBELoader().load('/bed/sky.hdr');
+        skyTexture.mapping = THREE.EquirectangularReflectionMapping;
+        tempScene.background = skyTexture;
+        tempScene.environment = skyTexture;
+
+        console.log("scene:", tempScene);
         setScene(tempScene);
       } catch (error) {
         console.error("Error loading GLTF model:", error);
@@ -69,8 +58,16 @@ const ModelViewer: React.FC = () => {
     loadModel();
   }, []);
 
-  return (
-    <Canvas
+  if (!scene) {
+    // Render spinner while the scene is loading
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        <svg className="animate-spin h-5 w-5 mr-3 ..." viewBox="0 0 24 24">  </svg>
+      </div>
+    );
+  }
+
+  return <Canvas
       className="w-full h-full"
       fallback={<div>Sorry, WebGL not supported!</div>}
       camera={{
@@ -79,14 +76,12 @@ const ModelViewer: React.FC = () => {
         near: cameraConfig.near,
         far: cameraConfig.far,
       }}
+      scene={scene}
     >
       <ambientLight intensity={Math.PI / 2} />
       <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} decay={0} intensity={Math.PI} />
       <pointLight position={[-10, -10, -10]} decay={0} intensity={Math.PI} />
-      {scene && <primitive object={scene} />}
+      <Bedmodel />
       <OrbitControls enableZoom={true} enableRotate={true} enablePan={true} />
     </Canvas>
-  );
-};
-
-export default ModelViewer;
+}
