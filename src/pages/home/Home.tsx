@@ -1,6 +1,6 @@
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import AWavesBackground from "../../components/AWavesBackground";
 
 gsap.registerPlugin(useGSAP);
@@ -10,6 +10,15 @@ function Home() {
 
   const elt1 = useRef<HTMLDivElement>(null);
   const bubbleRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [scrollOffset, setScrollOffset] = useState(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrollOffset(window.scrollY);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const floatingBubbles = [
     {
@@ -132,29 +141,70 @@ function Home() {
   }, []);
 
   return (
-    <div className="relative w-full h-full bg-black overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center z-0">
-        <div className="w-[90%] h-[80%] max-w-4xl rounded-[100px] bg-[radial-gradient(circle_at_30%_30%,rgba(134,192,255,0.85),rgba(88,149,255,0.65),rgba(46,82,255,0.25))] shadow-[0_40px_120px_rgba(50,70,150,0.55)] blur-xl"></div>
-      </div>
-      <AWavesBackground />
-      <div className="pointer-events-none absolute inset-0 z-0">
-        {floatingBubbles.map((bubble, index) => (
+    <div className="min-h-screen bg-black text-white">
+      <div
+        className="relative w-full h-screen overflow-visible"
+        style={{
+          backgroundImage: "url(/susnet.jpg)",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }}
+      >
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center z-0">
+          <div className="w-[90%] h-[80%] max-w-4xl rounded-[100px] bg-[radial-gradient(circle_at_30%_30%,rgba(134,192,255,0.85),rgba(88,149,255,0.65),rgba(46,82,255,0.25))] shadow-[0_40px_120px_rgba(50,70,150,0.55)] blur-xl"></div>
+        </div>
+        <AWavesBackground scrollOffset={scrollOffset} />
+        <div className="pointer-events-none absolute inset-0 z-0">
+          {floatingBubbles.map((bubble, index) => (
+            <div
+              key={index}
+              ref={(el) => (bubbleRefs.current[index] = el)}
+              className={`absolute ${bubble.position} w-15 h-15 rounded-full bg-[radial-gradient(circle,rgba(34,197,94,0.9)_20%,rgba(22,163,74,0.7)_50%,rgba(5,150,105,0.4)_75%,rgba(0,0,0,0)_100%)] shadow-[0_0_40px_rgba(34,197,94,0.8),0_0_80px_rgba(22,163,74,0.5),inset_0_0_20px_rgba(34,197,94,0.3)] flex items-center justify-center text-center font-handjet text-xs text-green-200 drop-shadow-[0_0_8px_rgba(34,197,94,0.9)] animate-pulse`}
+            >
+              hi
+            </div>
+          ))}
+        </div>
+        <div className="relative z-10 flex flex-col w-full h-full justify-center items-center pt-8 gap-9">
           <div
-            key={index}
-            ref={(el) => (bubbleRefs.current[index] = el)}
-            className={`absolute ${bubble.position} w-15 h-15 rounded-full bg-[radial-gradient(circle,rgba(40,40,40,0.95)_30%,rgba(10,10,10,0.8)_65%,rgba(0,0,0,0)_100%)] shadow-[0_0_30px_rgba(0,0,0,0.5)] flex items-center justify-center text-center font-handjet text-xs text-gray-200`}
+            ref={ease_in_ref}
+            className="relative z-10 p-11 font-handjet font-bold animate-pulse text-xl text-black"
           >
-            hi
+            {" "}
+            Welcome to Fiona's Homepage
           </div>
-        ))}
+        </div>
       </div>
-      <div className="relative z-10 flex flex-col w-full h-full justify-center items-center pt-8 gap-9">
-        <div
-          ref={ease_in_ref}
-          className="relative z-10 p-11 font-handjet font-bold animate-pulse text-xl"
-        >
-          {" "}
-          Welcome to Fiona's Homepage
+      <div className="bg-[#050505] py-24 px-6 md:px-12 space-y-16">
+        <div className="max-w-5xl mx-auto space-y-8 text-gray-300">
+          <h2 className="text-2xl font-semibold text-white">
+            Placeholder Section
+          </h2>
+          <p className="text-base text-gray-400">
+            这里是用于测试滚动效果的占位内容。滚动页面时可以观察顶部条纹逐渐向上收起的动画。
+          </p>
+        </div>
+        <div className="max-w-6xl mx-auto grid gap-6 md:grid-cols-3">
+          {["Snapshot A", "Snapshot B", "Snapshot C"].map((title) => (
+            <div
+              key={title}
+              className="h-48 rounded-3xl border border-white/10 bg-linear-to-br from-[#111] via-[#080808] to-[#050505] shadow-[0_25px_60px_rgba(0,0,0,0.45)] flex flex-col items-start justify-between p-6"
+            >
+              <p className="text-sm uppercase tracking-[0.3em] text-white/60">
+                placeholder
+              </p>
+              <div>
+                <p className="text-xl font-semibold text-white">{title}</p>
+                <p className="text-sm text-gray-500 mt-2">
+                  未来内容占位，用于延长页面高度。
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="max-w-4xl mx-auto h-64 rounded-[40px] border border-white/10 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),rgba(5,5,5,0.9))] flex items-center justify-center text-gray-400 text-lg tracking-wide">
+          更多内容即将到来...
         </div>
       </div>
     </div>

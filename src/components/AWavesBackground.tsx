@@ -10,6 +10,7 @@ type Cursor = {
 type Point = {
   x: number;
   y: number;
+  rowFactor: number;
   cursor: Cursor;
 };
 
@@ -30,10 +31,18 @@ type State = {
   };
 };
 
-const AWavesBackground = () => {
+type AWavesBackgroundProps = {
+  scrollOffset?: number;
+};
+
+const AWavesBackground = ({ scrollOffset = 0 }: AWavesBackgroundProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const groupRef = useRef<SVGGElement | null>(null);
+  const defsRef = useRef<SVGDefsElement | null>(null);
+  const gradientRef = useRef<SVGRadialGradientElement | null>(null);
   const animationRef = useRef<number>();
+  const scrollRef = useRef(0);
   const stateRef = useRef<State>({
     bounding: null,
     lines: [],
@@ -56,13 +65,95 @@ const AWavesBackground = () => {
     const svg = svgRef.current;
     if (!container || !svg) return;
 
+    const ensureSvgStructure = () => {
+      if (!svg) return;
+      if (!defsRef.current) {
+        const defs = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "defs"
+        );
+
+        const gradient = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "radialGradient"
+        );
+        gradient.setAttribute("id", "waveGradient");
+        gradient.setAttribute("gradientUnits", "userSpaceOnUse");
+        gradient.setAttribute("cx", "50%");
+        gradient.setAttribute("cy", "50%");
+        gradient.setAttribute("r", "50%");
+
+        const stopCenter = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "stop"
+        );
+        stopCenter.setAttribute("offset", "0%");
+        stopCenter.setAttribute("stop-color", "rgb(242, 236, 211)");
+
+        const stopOuter = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "stop"
+        );
+        stopOuter.setAttribute("offset", "100%");
+        stopOuter.setAttribute("stop-color", "rgb(243, 217, 186)");
+
+        gradient.appendChild(stopCenter);
+        gradient.appendChild(stopOuter);
+        defs.appendChild(gradient);
+        gradientRef.current = gradient;
+
+        const filter = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "filter"
+        );
+        filter.setAttribute("id", "waveShadow");
+        filter.setAttribute("x", "-20%");
+        filter.setAttribute("y", "-20%");
+        filter.setAttribute("width", "140%");
+        filter.setAttribute("height", "160%");
+
+        const dropShadow = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "feDropShadow"
+        );
+        dropShadow.setAttribute("dx", "0");
+        dropShadow.setAttribute("dy", "-1.3");
+        dropShadow.setAttribute("stdDeviation", "1.6");
+        dropShadow.setAttribute("flood-color", "#040404");
+        dropShadow.setAttribute("flood-opacity", "0.55");
+
+        filter.appendChild(dropShadow);
+        defs.appendChild(filter);
+        svg.appendChild(defs);
+        defsRef.current = defs;
+      }
+
+      if (!groupRef.current) {
+        const group = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "g"
+        );
+        group.setAttribute("filter", "url(#waveShadow)");
+        group.style.mixBlendMode = "screen";
+        svg.appendChild(group);
+        groupRef.current = group;
+      }
+    };
+
     const state = stateRef.current;
 
     const setSize = () => {
       state.bounding = container.getBoundingClientRect();
       if (!state.bounding) return;
       svg.style.width = `${state.bounding.width}px`;
-      svg.style.height = `${state.bounding.height}px`;
+      // SVG 高度会在 setLines 中根据实际需要设置
+      // 先设置一个初始高度，避免首次渲染时没有高度
+      if (!svg.style.height) {
+        const maxCursorOffset = 100;
+        const strokeWidth = 50;
+        const extraHeight = maxCursorOffset + strokeWidth / 2;
+        svg.style.height = `${state.bounding.height + extraHeight}px`;
+      }
     };
 
     const setLines = () => {
@@ -73,21 +164,44 @@ const AWavesBackground = () => {
       state.paths.forEach((path) => path.remove());
       state.paths = [];
 
-      const xGap = 2.5;
+      const xGap = 2;
       const yGap = 50;
+      const strokeWidth = 50;
+      const maxCursorOffset = 100; // 线条向下弯曲的最大偏移
+      // 增加高度以容纳线条向下弯曲，确保不会被截断
+      const extraHeight = maxCursorOffset + strokeWidth / 2;
       const oWidth = width + 200;
-      const oHeight = height + 30;
-      const totalRows = Math.ceil(oHeight / yGap);
+      // 线条数量基于屏幕高度计算，确保刚好覆盖屏幕
+      const totalRows = Math.ceil(height / yGap);
       const totalCols = Math.ceil(oWidth / xGap);
       const xStart = (width - xGap * totalCols) / 2;
       const yStart = (height - yGap * totalRows) / 2;
 
+      // SVG 高度增加以容纳弯曲，但线条只生成到屏幕高度
+      svg.style.height = `${height + extraHeight}px`;
+
+      // 径向渐变使用百分比，自动居中，无需更新位置
+
+      const group = groupRef.current;
+      if (!group) return;
+      group.innerHTML = "";
+
       for (let row = 0; row <= totalRows; row++) {
+        const y = yStart + yGap * row;
+        // 确保线条不超过屏幕高度
+        if (y > height) break;
+
+        const rowFactor =
+          totalRows === 0 ? 0 : Math.min(1, Math.max(0, row / totalRows));
         const points: Point[] = [];
         for (let col = 0; col <= totalCols; col++) {
+          const x = xStart + xGap * col;
+          // 确保线条不超过屏幕宽度
+          if (x > width) break;
           points.push({
-            x: xStart + xGap * col,
-            y: yStart + yGap * row,
+            x,
+            y,
+            rowFactor,
             cursor: { x: 0, y: 0, vx: 0, vy: 0 },
           });
         }
@@ -97,9 +211,11 @@ const AWavesBackground = () => {
           "path"
         );
         path.setAttribute("fill", "none");
-        path.setAttribute("stroke", "rgba(241, 244, 203, 1)");
+        path.setAttribute("stroke", "url(#waveGradient)");
         path.setAttribute("stroke-width", "50");
-        svg.appendChild(path);
+        path.setAttribute("stroke-linecap", "butt");
+        path.setAttribute("stroke-linejoin", "miter");
+        group.appendChild(path);
         state.paths.push(path);
       }
     };
@@ -184,6 +300,7 @@ const AWavesBackground = () => {
       animationRef.current = requestAnimationFrame(tick);
     };
 
+    ensureSvgStructure();
     setSize();
     setLines();
     animationRef.current = requestAnimationFrame(tick);
@@ -217,19 +334,30 @@ const AWavesBackground = () => {
       state.paths.forEach((path) => path.remove());
       state.paths = [];
       state.lines = [];
+      if (groupRef.current) {
+        groupRef.current.remove();
+        groupRef.current = null;
+      }
+      if (defsRef.current) {
+        defsRef.current.remove();
+        defsRef.current = null;
+      }
     };
   }, []);
+
+  useEffect(() => {
+    scrollRef.current = scrollOffset;
+  }, [scrollOffset]);
 
   return (
     <div
       ref={containerRef}
       className="pointer-events-none absolute inset-0 z-0"
+      style={{
+        overflow: "visible",
+      }}
     >
-      <svg
-        ref={svgRef}
-        className="w-full h-full opacity-80"
-        style={{ filter: "blur(1.5px)" }}
-      />
+      <svg ref={svgRef} className="w-full" style={{ filter: "blur(1.5px)" }} />
     </div>
   );
 };
