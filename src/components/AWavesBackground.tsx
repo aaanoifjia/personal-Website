@@ -33,16 +33,22 @@ type State = {
 
 type AWavesBackgroundProps = {
   scrollOffset?: number;
+  textTitle?: string;
 };
 
-const AWavesBackground = ({ scrollOffset = 0 }: AWavesBackgroundProps) => {
+const AWavesBackground = ({
+  scrollOffset = 0,
+  textTitle,
+}: AWavesBackgroundProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const groupRef = useRef<SVGGElement | null>(null);
+  const textGroupRef = useRef<SVGGElement | null>(null);
   const defsRef = useRef<SVGDefsElement | null>(null);
   const gradientRef = useRef<SVGRadialGradientElement | null>(null);
   const animationRef = useRef<number>();
   const scrollRef = useRef(0);
+  const textPointsRef = useRef<Point[]>([]);
   const stateRef = useRef<State>({
     bounding: null,
     lines: [],
@@ -146,6 +152,17 @@ const AWavesBackground = ({ scrollOffset = 0 }: AWavesBackgroundProps) => {
         svg.appendChild(group);
         groupRef.current = group;
       }
+
+      if (!textGroupRef.current && textTitle) {
+        const textGroup = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "g"
+        );
+        textGroup.setAttribute("filter", "url(#waveShadow)");
+        textGroup.style.mixBlendMode = "screen";
+        svg.appendChild(textGroup);
+        textGroupRef.current = textGroup;
+      }
     };
 
     const state = stateRef.current;
@@ -228,6 +245,54 @@ const AWavesBackground = ({ scrollOffset = 0 }: AWavesBackgroundProps) => {
       }
     };
 
+    const setText = () => {
+      if (!textTitle || !textGroupRef.current) return;
+      const bounding = state.bounding;
+      if (!bounding) return;
+      const { width, height } = bounding;
+
+      textGroupRef.current.innerHTML = "";
+      textPointsRef.current = [];
+
+      // 创建文字，每个字符作为一个点
+      const fontSize = 48;
+      const textSpacing = fontSize * 0.6;
+      const textWidth = textTitle.length * textSpacing;
+      const startX = (width - textWidth) / 2;
+      const startY = height / 2;
+
+      // 为每个字符创建点
+      for (let i = 0; i < textTitle.length; i++) {
+        const char = textTitle[i];
+        if (char === " ") continue;
+
+        const x = startX + i * textSpacing;
+        const y = startY;
+
+        const point: Point = {
+          x,
+          y,
+          rowFactor: 0.5,
+          cursor: { x: 0, y: 0, vx: 0, vy: 0 },
+        };
+        textPointsRef.current.push(point);
+
+        const textElement = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "text"
+        );
+        textElement.setAttribute("x", x.toString());
+        textElement.setAttribute("y", y.toString());
+        textElement.setAttribute("font-size", fontSize.toString());
+        textElement.setAttribute("font-family", "handjet, monospace");
+        textElement.setAttribute("font-weight", "bold");
+        textElement.setAttribute("fill", "url(#waveGradient)");
+        textElement.setAttribute("text-anchor", "middle");
+        textElement.textContent = char;
+        textGroupRef.current.appendChild(textElement);
+      }
+    };
+
     const updateMousePosition = (pageX: number, pageY: number) => {
       const bounding = state.bounding;
       if (!bounding) return;
@@ -262,6 +327,31 @@ const AWavesBackground = ({ scrollOffset = 0 }: AWavesBackgroundProps) => {
           point.cursor.y = Math.min(100, Math.max(-100, point.cursor.y));
         });
       });
+
+      // 移动文字点
+      textPointsRef.current.forEach((point) => {
+        const dx = point.x - mouse.sx;
+        const dy = point.y - mouse.sy;
+        const d = Math.hypot(dx, dy);
+        const l = Math.max(175, mouse.vs);
+        if (d < l) {
+          const f = 1 - d / l;
+          point.cursor.vx += Math.cos(mouse.a) * f * mouse.vs * 0.08;
+          point.cursor.vy += Math.sin(mouse.a) * f * mouse.vs * 0.08;
+        }
+
+        point.cursor.vx += (0 - point.cursor.x) * 0.005;
+        point.cursor.vy += (0 - point.cursor.y) * 0.005;
+
+        point.cursor.vx *= 0.925;
+        point.cursor.vy *= 0.925;
+
+        point.cursor.x += point.cursor.vx * 2;
+        point.cursor.y += point.cursor.vy * 2;
+
+        point.cursor.x = Math.min(100, Math.max(-100, point.cursor.x));
+        point.cursor.y = Math.min(100, Math.max(-100, point.cursor.y));
+      });
     };
 
     const moved = (point: Point, withCursorForce = true) => {
@@ -286,6 +376,18 @@ const AWavesBackground = ({ scrollOffset = 0 }: AWavesBackgroundProps) => {
         });
         state.paths[index]?.setAttribute("d", d);
       });
+
+      // 更新文字位置
+      if (textGroupRef.current) {
+        const textElements = textGroupRef.current.querySelectorAll("text");
+        textPointsRef.current.forEach((point, index) => {
+          if (textElements[index]) {
+            const coord = moved(point, true);
+            textElements[index].setAttribute("x", coord.x.toString());
+            textElements[index].setAttribute("y", coord.y.toString());
+          }
+        });
+      }
     };
 
     const tick = () => {
@@ -311,6 +413,7 @@ const AWavesBackground = ({ scrollOffset = 0 }: AWavesBackgroundProps) => {
     ensureSvgStructure();
     setSize();
     setLines();
+    setText();
     animationRef.current = requestAnimationFrame(tick);
 
     const handleResize = () => {
