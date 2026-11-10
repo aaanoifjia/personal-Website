@@ -1,7 +1,7 @@
 {
   "name": "surreal-dream-mall",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "@viggle/splat-engine": "0.3.2",
-    "playcanvas": "2.23.3"
+    "playcanvas": "2.23.3",
+    "three": "^0.170.0"
   },
   "devDependencies": {
+    "@types/three": "^0.170.0",
     "typescript": "^5.5.3",
     "vite": "^6.4.1"
   }
