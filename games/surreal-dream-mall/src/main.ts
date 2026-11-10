@@ -1,4 +1,5 @@
 import { Environment, Scene, SkyDome } from "@viggle/splat-engine";
+import { Asset, Entity } from "playcanvas";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import "./style.css";
@@ -171,14 +172,32 @@ async function loadEnvironment(url: string, label: string) {
   }
 
   try {
-    setSceneStatus(`Loading ${label}… large PLY files can take a while.`);
-    await Environment.load(scene, url);
+    const lower = label.toLowerCase();
+    setSceneStatus(`Loading ${label}…`);
+
+    if (lower.endsWith(".sog")) {
+      const asset = new Asset(label, "gsplat", { url, filename: label });
+      scene.app.assets.add(asset);
+
+      await new Promise<void>((resolve, reject) => {
+        asset.ready(() => resolve());
+        asset.once("error", (error) => reject(error));
+        scene.app.assets.load(asset);
+      });
+
+      const splat = new Entity("Dream Mall SOG");
+      splat.addComponent("gsplat", { asset });
+      scene.app.root.addChild(splat);
+    } else {
+      await Environment.load(scene, url);
+    }
+
     environmentLoaded = true;
     setSceneStatus(`${label} loaded. Click Enter or the scene, then use WASD + mouse.`);
     resetPlayer();
   } catch (error) {
     console.error(error);
-    setSceneStatus(`Could not load ${label}. Refresh and try the alternate PINOC export.`);
+    setSceneStatus(`Could not load ${label}. Try the SOG export or reload the page.`);
   }
 }
 
@@ -219,6 +238,7 @@ async function exists(url: string) {
 }
 
 const base = import.meta.env.BASE_URL;
+const defaultSog = `${base}assets/mall.sog`;
 const defaultPly = `${base}assets/mall.ply`;
 const defaultSpz = `${base}assets/mall.spz`;
 const defaultCollider = `${base}assets/collider.glb`;
@@ -229,12 +249,14 @@ if (await exists(defaultCollider)) {
   setCollisionStatus("Choose your collider .glb locally to enable floor/wall collision.");
 }
 
-if (await exists(defaultPly)) {
+if (await exists(defaultSog)) {
+  await loadEnvironment(defaultSog, "mall.sog");
+} else if (await exists(defaultPly)) {
   await loadEnvironment(defaultPly, "mall.ply");
 } else if (await exists(defaultSpz)) {
   await loadEnvironment(defaultSpz, "mall.spz");
 } else {
-  setSceneStatus("Choose the exported PINOC .ply (or .spz). PLY works directly; no conversion is required.");
+  setSceneStatus("Choose mall.sog (recommended), or the original PINOC .ply / .spz.");
 }
 
 sceneFileInput.addEventListener("change", async () => {
