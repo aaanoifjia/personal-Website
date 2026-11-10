@@ -8,16 +8,31 @@
   </head>
   <body>
     <canvas id="scene"></canvas>
+    <div class="crosshair" aria-hidden="true"></div>
 
     <div id="hud">
       <div class="title">Surreal Dream Mall</div>
-      <div id="status">Preparing scene…</div>
-      <label class="upload">
-        Load PINOC .spz
-        <input id="scene-file" type="file" accept=".spz,.ply" />
-      </label>
-      <button id="fullscreen" type="button">Fullscreen</button>
-      <div class="hint">Drag to orbit · scroll to zoom · upload the exported PINOC scene if mall.spz is not committed yet.</div>
+      <div id="scene-status" class="status">Preparing splat renderer…</div>
+      <div id="collision-status" class="status secondary">Preparing collider…</div>
+
+      <div class="actions">
+        <label class="upload">
+          Load PINOC .ply / .spz
+          <input id="scene-file" type="file" accept=".ply,.spz" />
+        </label>
+        <label class="upload">
+          Load collider .glb
+          <input id="collider-file" type="file" accept=".glb" />
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="enter-game" type="button">Enter</button>
+        <button id="reset-player" type="button">Reset (R)</button>
+        <button id="fullscreen" type="button">Fullscreen</button>
+      </div>
+
+      <div class="hint">WASD / arrows move · mouse looks · Shift runs · R resets · Esc releases mouse</div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>
