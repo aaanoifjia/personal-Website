@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#171526" />
+    <title>Surreal Dream Mall</title>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+
+    <div id="hud">
+      <div class="title">Surreal Dream Mall</div>
+      <div id="status">Preparing scene…</div>
+      <label class="upload">
+        Load PINOC .spz
+        <input id="scene-file" type="file" accept=".spz,.ply" />
+      </label>
+      <button id="fullscreen" type="button">Fullscreen</button>
+      <div class="hint">Drag to orbit · scroll to zoom · upload the exported PINOC scene if mall.spz is not committed yet.</div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
