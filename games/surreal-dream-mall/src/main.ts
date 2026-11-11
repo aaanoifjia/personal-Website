@@ -412,7 +412,9 @@ async function loadCharacter(url: string, label: string) {
       scene.app.assets.load(asset);
     });
 
-    const root = asset.resource.instantiateRenderEntity({ castShadows: false });
+    const resource = asset.resource;
+    if (!resource) throw new Error("Character container loaded without a resource.");
+    const root = resource.instantiateRenderEntity({ castShadows: false });
     root.name = "PlayerCharacter";
     root.setLocalScale(CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE);
     scene.app.root.addChild(root);
