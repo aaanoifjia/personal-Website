@@ -48,8 +48,9 @@ const EYE_HEIGHT = 0.46;
 const PLAYER_RADIUS = 0.11;
 const MAX_STEP = 0.14;
 const MAX_DROP = 0.38;
-const WALK_SPEED = 0.92;
-const RUN_SPEED = 1.55;
+// Dreamcore exploration pace: about half the previous speed.
+const WALK_SPEED = 0.42;
+const RUN_SPEED = 0.82;
 
 const CHARACTER_SCALE = 0.0015; // Half the original visual size (0.003).
 const CAMERA_DISTANCE = 1.15;
@@ -347,7 +348,7 @@ function animateCharacter(dt: number) {
   const targetBlend = isMoving ? 1 : 0;
   walkBlend += (targetBlend - walkBlend) * (1 - Math.exp(-10 * dt));
 
-  if (isMoving) walkTime += dt * (isRunning ? 11.5 : 8.2);
+  if (isMoving) walkTime += dt * (isRunning ? 6.4 : 4.0);
 
   const phase = Math.sin(walkTime);
   const legAmplitude = (isRunning ? 30 : 20) * walkBlend;
