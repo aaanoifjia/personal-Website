@@ -11,7 +11,8 @@
   "dependencies": {
     "@viggle/splat-engine": "0.3.2",
     "playcanvas": "2.23.3",
-    "three": "^0.170.0"
+    "three": "^0.170.0",
+    "three-mesh-bvh": "^0.9.3"
   },
   "devDependencies": {
     "@types/three": "^0.170.0",
