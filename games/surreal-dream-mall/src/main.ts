@@ -32,11 +32,14 @@ SkyDome.create(scene, {
 });
 
 const player = new THREE.Vector3(0, 0.12, 3.05);
+// Keep collision/physics independent from the displayed position. Generated
+// collider surfaces have slight unevenness, which previously propagated as
+// visible shaking of both the character and follow camera.
+const visualPlayer = player.clone();
 const spawn = player.clone();
 const keys = new Set<string>();
 const raycaster = new THREE.Raycaster();
 const wallRaycaster = new THREE.Raycaster();
-(wallRaycaster as THREE.Raycaster & { firstHitOnly: boolean }).firstHitOnly = true;
 const down = new THREE.Vector3(0, -1, 0);
 const tempDirection = new THREE.Vector3();
 const tempOrigin = new THREE.Vector3();
@@ -107,14 +110,14 @@ const setCharacterStatus = (message: string) => { characterStatus.textContent = 
 
 function updateCharacterTransform() {
   if (!characterRoot) return;
-  characterRoot.setPosition(player.x, player.y - EYE_HEIGHT, player.z);
+  characterRoot.setPosition(visualPlayer.x, visualPlayer.y - EYE_HEIGHT, visualPlayer.z);
   characterRoot.setEulerAngles(0, characterYaw, 0);
 }
 
 function updateCamera() {
-  const targetX = player.x;
-  const targetY = player.y - EYE_HEIGHT + CAMERA_TARGET_HEIGHT;
-  const targetZ = player.z;
+  const targetX = visualPlayer.x;
+  const targetY = visualPlayer.y - EYE_HEIGHT + CAMERA_TARGET_HEIGHT;
+  const targetZ = visualPlayer.z;
 
   const yawRad = THREE.MathUtils.degToRad(cameraYaw);
   const pitchRad = THREE.MathUtils.degToRad(cameraPitch);
@@ -145,11 +148,20 @@ function findFloor(x: number, z: number, eyeY: number): number | null {
   raycaster.far = MAX_STEP + MAX_DROP + 0.7;
 
   const hits = raycaster.intersectObjects(colliderMeshes, false);
+  let closest: number | null = null;
+  let closestDelta = Infinity;
+  // Prefer continuity with the previous ground height, rather than blindly
+  // accepting the first triangle (which can switch across scanned patches).
   for (const hit of hits) {
     const normal = worldNormalForHit(hit);
-    if (normal && normal.y > 0.35) return hit.point.y;
+    if (!normal || normal.y < 0.65) continue;
+    const delta = Math.abs(hit.point.y - footY);
+    if (delta < closestDelta) {
+      closest = hit.point.y;
+      closestDelta = delta;
+    }
   }
-  return null;
+  return closest;
 }
 
 function snapToFloor() {
@@ -185,6 +197,7 @@ function resetPlayer() {
   cameraPitch = 14;
   characterYaw = 180;
   snapToFloor();
+  visualPlayer.copy(player);
   resetProceduralPose();
   updateCharacterTransform();
   updateCamera();
@@ -203,15 +216,20 @@ function blockedHorizontally(dx: number, dz: number) {
     wallRaycaster.set(tempOrigin, tempDirection);
     wallRaycaster.near = 0;
     wallRaycaster.far = distance + PLAYER_RADIUS;
-    const hit = wallRaycaster.intersectObjects(colliderMeshes, false)[0];
-    if (hit && hit.distance <= distance + PLAYER_RADIUS) return true;
+    for (const hit of wallRaycaster.intersectObjects(colliderMeshes, false)) {
+      if (hit.distance > distance + PLAYER_RADIUS) break;
+      const normal = worldNormalForHit(hit);
+      // The previous test also treated tiny slopes/ground triangles as
+      // walls, producing start/stop motion on an irregular collider.
+      if (normal && normal.y < 0.65) return true;
+    }
   }
   return false;
 }
 
-function tryMove(dx: number, dz: number) {
-  if (Math.abs(dx) < 1e-7 && Math.abs(dz) < 1e-7) return;
-  if (blockedHorizontally(dx, dz)) return;
+function tryMove(dx: number, dz: number): boolean {
+  if (Math.abs(dx) < 1e-7 && Math.abs(dz) < 1e-7) return false;
+  if (blockedHorizontally(dx, dz)) return false;
 
   const nextX = player.x + dx;
   const nextZ = player.z + dz;
@@ -219,19 +237,30 @@ function tryMove(dx: number, dz: number) {
   if (colliderMeshes.length === 0) {
     player.x = nextX;
     player.z = nextZ;
-    return;
+    return true;
   }
 
   const currentFloor = player.y - EYE_HEIGHT;
   const nextFloor = findFloor(nextX, nextZ, player.y);
-  if (nextFloor === null) return;
+  if (nextFloor === null) return false;
 
   const delta = nextFloor - currentFloor;
-  if (delta > MAX_STEP || delta < -MAX_DROP) return;
+  if (delta > MAX_STEP || delta < -MAX_DROP) return false;
 
   player.x = nextX;
   player.z = nextZ;
   player.y = nextFloor + EYE_HEIGHT;
+  return true;
+}
+
+function updateVisualPlayer(dt: number) {
+  // Frame-rate-independent smoothing. Horizontal and vertical physics motion
+  // are separated so that tiny height changes don't shake the follow camera.
+  const horizontalBlend = 1 - Math.exp(-18 * Math.min(dt, 0.1));
+  const verticalBlend = 1 - Math.exp(-9 * Math.min(dt, 0.1));
+  visualPlayer.x += (player.x - visualPlayer.x) * horizontalBlend;
+  visualPlayer.z += (player.z - visualPlayer.z) * horizontalBlend;
+  visualPlayer.y += (player.y - visualPlayer.y) * verticalBlend;
 }
 
 function tickPlayer(dt: number) {
@@ -264,16 +293,20 @@ function tickPlayer(dt: number) {
   const dx = (forwardX * forward + rightX * right) * step;
   const dz = (forwardZ * forward + rightZ * right) * step;
 
+  // Solve the intended XZ displacement as one move. Only use axis sliding if
+  // blocked, rather than snapping the floor height twice per animation frame.
   const beforeX = player.x;
   const beforeZ = player.z;
-  tryMove(dx, 0);
-  tryMove(0, dz);
+  if (!tryMove(dx, dz)) {
+    tryMove(dx, 0);
+    tryMove(0, dz);
+  }
   isMoving = Math.hypot(player.x - beforeX, player.z - beforeZ) > 1e-5;
 
   if (isMoving) {
-    const actualDx = player.x - beforeX;
-    const actualDz = player.z - beforeZ;
-    const targetYaw = THREE.MathUtils.radToDeg(Math.atan2(actualDx, actualDz));
+    // Face the stable intended input direction rather than the jitter-prone
+    // per-frame collision result, which can oscillate between X and Z.
+    const targetYaw = THREE.MathUtils.radToDeg(Math.atan2(dx, dz));
     characterYaw = dampAngle(characterYaw, targetYaw, 12, dt);
   }
 }
@@ -317,7 +350,6 @@ function animateCharacter(dt: number) {
   if (isMoving) walkTime += dt * (isRunning ? 11.5 : 8.2);
 
   const phase = Math.sin(walkTime);
-  const phase2 = Math.sin(walkTime * 2);
   const legAmplitude = (isRunning ? 30 : 20) * walkBlend;
   const armAmplitude = (isRunning ? 19 : 12) * walkBlend;
   const leftKnee = Math.max(0, -phase) * (isRunning ? 24 : 12) * walkBlend;
@@ -334,12 +366,8 @@ function animateCharacter(dt: number) {
   setBoneOffset("mixamorigSpine", 0, phase * 2.4 * walkBlend);
   setBoneOffset("mixamorigSpine1", 0, -phase * 1.8 * walkBlend);
 
-  const hips = bones.get("mixamorigHips");
-  const hipsBase = bindPosition.get("mixamorigHips");
-  if (hips && hipsBase) {
-    const bob = Math.abs(phase2) * (isRunning ? 1.7 : 1.0) * walkBlend;
-    hips.setLocalPosition(hipsBase.x, hipsBase.y + bob, hipsBase.z);
-  }
+  // Deliberately no hips/root translation while diagnosing jitter:
+  // all walking motion is confined to arm/leg joint rotations.
 }
 
 async function loadEnvironment(url: string, label: string) {
@@ -414,6 +442,7 @@ async function loadCollider(url: string, label: string) {
       center.z,
     );
     player.copy(spawn);
+    visualPlayer.copy(spawn);
 
     const faceCount = meshes.reduce((sum, mesh) => {
       const geom = mesh.geometry;
@@ -598,6 +627,7 @@ let perfCpuMs = 0;
 scene.app.on("update", (dt: number) => {
   const start = performance.now();
   tickPlayer(dt);
+  updateVisualPlayer(dt);
   animateCharacter(dt);
   updateCharacterTransform();
   updateCamera();
