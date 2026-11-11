@@ -54,6 +54,7 @@ let characterYaw = 180;
 let environmentLoaded = false;
 let colliderMeshes: THREE.Mesh[] = [];
 let characterRoot: Entity | null = null;
+let characterAsset: Asset | null = null;
 let characterLoaded = false;
 let walkTime = 0;
 let walkBlend = 0;
@@ -396,11 +397,6 @@ async function loadCollider(url: string, label: string) {
 }
 
 async function loadCharacter(url: string, label: string) {
-  if (characterLoaded) {
-    setCharacterStatus("A character is already loaded. Refresh the page to switch characters.");
-    return;
-  }
-
   try {
     setCharacterStatus(`Loading character: ${label}…`);
     const asset = new Asset(label, "container", { url, filename: label });
@@ -417,9 +413,19 @@ async function loadCharacter(url: string, label: string) {
     const root = resource.instantiateRenderEntity({ castShadows: false });
     root.name = "PlayerCharacter";
     root.setLocalScale(CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE);
-    scene.app.root.addChild(root);
 
+    // Replace only after the new GLB has successfully loaded. Keep the old
+    // character visible on errors, and release the old model's resources.
+    const previousRoot = characterRoot;
+    const previousAsset = characterAsset;
+    if (previousRoot) previousRoot.destroy();
+    if (previousAsset) {
+      scene.app.assets.remove(previousAsset);
+      previousAsset.unload();
+    }
+    scene.app.root.addChild(root);
     characterRoot = root;
+    characterAsset = asset;
     bones.clear();
     bindEuler.clear();
     bindPosition.clear();
@@ -435,6 +441,8 @@ async function loadCharacter(url: string, label: string) {
     }
 
     characterLoaded = true;
+    walkTime = 0;
+    walkBlend = 0;
     resetProceduralPose();
     updateCharacterTransform();
     setCharacterStatus(`${label} ready · ${bones.size}/${boneNames.length} walk-control bones detected.`);
