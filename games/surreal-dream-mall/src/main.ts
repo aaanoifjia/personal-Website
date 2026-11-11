@@ -17,7 +17,7 @@ if (!canvas || !sceneStatus || !collisionStatus || !sceneFileInput || !colliderF
   throw new Error("Required DOM elements are missing.");
 }
 
-const scene = await Scene.create(canvas, { fov: 64, depth: true });
+const scene = await Scene.create(canvas, { fov: 50, depth: true });
 scene.start();
 
 SkyDome.create(scene, {
@@ -80,6 +80,28 @@ function findFloor(x: number, z: number, eyeY: number): number | null {
 function snapToFloor() {
   const floor = findFloor(player.x, player.z, player.y);
   if (floor !== null) player.y = floor + EYE_HEIGHT;
+}
+
+function findGroundFloorFromAbove(x: number, z: number, bounds: THREE.Box3): number | null {
+  if (colliderMeshes.length === 0) return null;
+
+  tempOrigin.set(x, bounds.max.y + 0.5, z);
+  raycaster.set(tempOrigin, down);
+  raycaster.near = 0;
+  raycaster.far = bounds.max.y - bounds.min.y + 1.5;
+
+  const walkable = raycaster
+    .intersectObjects(colliderMeshes, false)
+    .filter((hit) => {
+      const normal = worldNormalForHit(hit);
+      return normal !== null && normal.y > 0.35;
+    });
+
+  if (walkable.length === 0) return null;
+
+  // The generated mall contains multiple height layers. For the first-person
+  // spawn we want the ground floor, not an upper balcony/escalator surface.
+  return Math.min(...walkable.map((hit) => hit.point.y));
 }
 
 function resetPlayer() {
@@ -219,8 +241,24 @@ async function loadCollider(url: string, label: string) {
 
     if (meshes.length === 0) throw new Error("No mesh found in collider GLB.");
     colliderMeshes = meshes;
-    setCollisionStatus(`${label} ready · ${meshes.length} collision mesh${meshes.length === 1 ? "" : "es"}.`);
-    snapToFloor();
+
+    // Derive the initial first-person position from the actual mall geometry.
+    // The previous prototype used a temporary hard-coded Z=3.05, which puts
+    // the camera outside the main room for this collider.
+    const bounds = new THREE.Box3().setFromObject(gltf.scene);
+    const center = bounds.getCenter(new THREE.Vector3());
+    const groundY = findGroundFloorFromAbove(center.x, center.z, bounds);
+
+    spawn.set(
+      center.x,
+      (groundY ?? bounds.min.y) + EYE_HEIGHT,
+      center.z,
+    );
+    player.copy(spawn);
+
+    setCollisionStatus(
+      `${label} ready · spawn centered at (${spawn.x.toFixed(2)}, ${spawn.y.toFixed(2)}, ${spawn.z.toFixed(2)}).`,
+    );
     updateCamera();
   } catch (error) {
     console.error(error);
