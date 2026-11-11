@@ -2,12 +2,14 @@ import { Environment, Scene, SkyDome } from "@viggle/splat-engine";
 import { Asset, Entity } from "playcanvas";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { acceleratedRaycast, MeshBVH } from "three-mesh-bvh";
 import "./style.css";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#scene");
 const sceneStatus = document.querySelector<HTMLDivElement>("#scene-status");
 const collisionStatus = document.querySelector<HTMLDivElement>("#collision-status");
 const characterStatus = document.querySelector<HTMLDivElement>("#character-status");
+const performanceStatus = document.querySelector<HTMLDivElement>("#performance-status");
 const sceneFileInput = document.querySelector<HTMLInputElement>("#scene-file");
 const colliderFileInput = document.querySelector<HTMLInputElement>("#collider-file");
 const characterFileInput = document.querySelector<HTMLInputElement>("#character-file");
@@ -15,11 +17,13 @@ const enterButton = document.querySelector<HTMLButtonElement>("#enter-game");
 const resetButton = document.querySelector<HTMLButtonElement>("#reset-player");
 const fullscreenButton = document.querySelector<HTMLButtonElement>("#fullscreen");
 
-if (!canvas || !sceneStatus || !collisionStatus || !characterStatus || !sceneFileInput || !colliderFileInput || !characterFileInput || !enterButton || !resetButton || !fullscreenButton) {
+if (!canvas || !sceneStatus || !collisionStatus || !characterStatus || !performanceStatus || !sceneFileInput || !colliderFileInput || !characterFileInput || !enterButton || !resetButton || !fullscreenButton) {
   throw new Error("Required DOM elements are missing.");
 }
 
 const scene = await Scene.create(canvas, { fov: 50, depth: true });
+// Cap pixel density for the ~1M-splat scene. Keep the original color/materials.
+scene.app.graphicsDevice.maxPixelRatio = Math.min(window.devicePixelRatio || 1, 1.25);
 scene.start();
 
 SkyDome.create(scene, {
@@ -31,6 +35,8 @@ const player = new THREE.Vector3(0, 0.12, 3.05);
 const spawn = player.clone();
 const keys = new Set<string>();
 const raycaster = new THREE.Raycaster();
+const wallRaycaster = new THREE.Raycaster();
+(wallRaycaster as THREE.Raycaster & { firstHitOnly: boolean }).firstHitOnly = true;
 const down = new THREE.Vector3(0, -1, 0);
 const tempDirection = new THREE.Vector3();
 const tempOrigin = new THREE.Vector3();
@@ -42,7 +48,7 @@ const MAX_DROP = 0.38;
 const WALK_SPEED = 0.92;
 const RUN_SPEED = 1.55;
 
-const CHARACTER_SCALE = 0.003;
+const CHARACTER_SCALE = 0.0015; // Half the original visual size (0.003).
 const CAMERA_DISTANCE = 1.15;
 const CAMERA_TARGET_HEIGHT = 0.34;
 const CAMERA_MIN_PITCH = -18;
@@ -80,9 +86,20 @@ const boneNames = [
 
 type BoneName = (typeof boneNames)[number];
 type TransformSnapshot = { x: number; y: number; z: number };
+type QuaternionSnapshot = { x: number; y: number; z: number; w: number };
 const bones = new Map<BoneName, Entity>();
-const bindEuler = new Map<BoneName, TransformSnapshot>();
+const bindRotation = new Map<BoneName, QuaternionSnapshot>();
 const bindPosition = new Map<BoneName, TransformSnapshot>();
+
+// Derived from the actual GLB joint orientations. Both upper arms start in
+// an outward A/T-pose. Rotating each upper-arm's bind-local direction into a
+// slightly splayed downward vector makes a relaxed, natural Idle stance.
+// Left/right differ in local Z; blind +/-Euler rotations were incorrect.
+const IDLE_LEFT_ARM = new THREE.Quaternion(0.6014, 0, -0.2716, 0.7514).normalize();
+const IDLE_RIGHT_ARM = new THREE.Quaternion(0.6014, 0, 0.2716, 0.7514).normalize();
+const LOCAL_X_AXIS = new THREE.Vector3(1, 0, 0);
+const LOCAL_Y_AXIS = new THREE.Vector3(0, 1, 0);
+const LOCAL_Z_AXIS = new THREE.Vector3(0, 0, 1);
 
 const setSceneStatus = (message: string) => { sceneStatus.textContent = message; };
 const setCollisionStatus = (message: string) => { collisionStatus.textContent = message; };
@@ -183,10 +200,10 @@ function blockedHorizontally(dx: number, dz: number) {
 
   for (const offset of [-0.06, -0.24, -0.4]) {
     tempOrigin.set(player.x, player.y + offset, player.z);
-    raycaster.set(tempOrigin, tempDirection);
-    raycaster.near = 0;
-    raycaster.far = distance + PLAYER_RADIUS;
-    const hit = raycaster.intersectObjects(colliderMeshes, false)[0];
+    wallRaycaster.set(tempOrigin, tempDirection);
+    wallRaycaster.near = 0;
+    wallRaycaster.far = distance + PLAYER_RADIUS;
+    const hit = wallRaycaster.intersectObjects(colliderMeshes, false)[0];
     if (hit && hit.distance <= distance + PLAYER_RADIUS) return true;
   }
   return false;
@@ -237,7 +254,7 @@ function tickPlayer(dt: number) {
   const angle = THREE.MathUtils.degToRad(cameraYaw);
   isRunning = keys.has("ShiftLeft") || keys.has("ShiftRight");
   const speed = isRunning ? RUN_SPEED : WALK_SPEED;
-  const step = speed * Math.min(dt, 0.05);
+  const step = speed * Math.min(dt, 0.1);
 
   const forwardX = -Math.sin(angle);
   const forwardZ = -Math.cos(angle);
@@ -268,18 +285,26 @@ function dampAngle(current: number, target: number, lambda: number, dt: number) 
 
 function setBoneOffset(name: BoneName, x = 0, y = 0, z = 0) {
   const bone = bones.get(name);
-  const base = bindEuler.get(name);
+  const base = bindRotation.get(name);
   if (!bone || !base) return;
-  bone.setLocalEulerAngles(base.x + x, base.y + y, base.z + z);
+
+  // Work relative to the actual local bind quaternion, not Euler angles.
+  // Apply the neutral arm correction even with zero walking input.
+  const q = new THREE.Quaternion(base.x, base.y, base.z, base.w);
+  if (name === "mixamorigLeftArm") q.multiply(IDLE_LEFT_ARM);
+  if (name === "mixamorigRightArm") q.multiply(IDLE_RIGHT_ARM);
+  if (x) q.multiply(new THREE.Quaternion().setFromAxisAngle(LOCAL_X_AXIS, THREE.MathUtils.degToRad(x)));
+  if (y) q.multiply(new THREE.Quaternion().setFromAxisAngle(LOCAL_Y_AXIS, THREE.MathUtils.degToRad(y)));
+  if (z) q.multiply(new THREE.Quaternion().setFromAxisAngle(LOCAL_Z_AXIS, THREE.MathUtils.degToRad(z)));
+  bone.setLocalRotation(q.x, q.y, q.z, q.w);
 }
 
 function resetProceduralPose() {
   for (const name of boneNames) {
+    setBoneOffset(name); // Arms hang naturally even when fully idle.
     const bone = bones.get(name);
-    const baseEuler = bindEuler.get(name);
-    const basePos = bindPosition.get(name);
-    if (bone && baseEuler) bone.setLocalEulerAngles(baseEuler.x, baseEuler.y, baseEuler.z);
-    if (bone && basePos) bone.setLocalPosition(basePos.x, basePos.y, basePos.z);
+    const position = bindPosition.get(name);
+    if (bone && position) bone.setLocalPosition(position.x, position.y, position.z);
   }
 }
 
@@ -293,8 +318,8 @@ function animateCharacter(dt: number) {
 
   const phase = Math.sin(walkTime);
   const phase2 = Math.sin(walkTime * 2);
-  const legAmplitude = (isRunning ? 34 : 24) * walkBlend;
-  const armAmplitude = (isRunning ? 30 : 18) * walkBlend;
+  const legAmplitude = (isRunning ? 30 : 20) * walkBlend;
+  const armAmplitude = (isRunning ? 19 : 12) * walkBlend;
   const leftKnee = Math.max(0, -phase) * (isRunning ? 24 : 12) * walkBlend;
   const rightKnee = Math.max(0, phase) * (isRunning ? 24 : 12) * walkBlend;
 
@@ -363,7 +388,11 @@ async function loadCollider(url: string, label: string) {
     const meshes: THREE.Mesh[] = [];
     gltf.scene.traverse((object) => {
       if (object instanceof THREE.Mesh) {
-        object.material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+        // Dense colliders used to receive up to eight brute-force triangle
+        // raycasts per movement frame. BVH reduces queries to nearby triangles.
+        const geometry = object.geometry as THREE.BufferGeometry & { boundsTree?: MeshBVH };
+        geometry.boundsTree ??= new MeshBVH(geometry, { maxLeafTris: 16 });
+        object.raycast = acceleratedRaycast;
         object.updateMatrixWorld(true);
         meshes.push(object);
       }
@@ -386,8 +415,12 @@ async function loadCollider(url: string, label: string) {
     );
     player.copy(spawn);
 
+    const faceCount = meshes.reduce((sum, mesh) => {
+      const geom = mesh.geometry;
+      return sum + (geom.index ? geom.index.count / 3 : (geom.attributes.position?.count ?? 0) / 3);
+    }, 0);
     setCollisionStatus(
-      `${label} ready · spawn centered at (${spawn.x.toFixed(2)}, ${spawn.y.toFixed(2)}, ${spawn.z.toFixed(2)}).`,
+      `${label} ready · ${Math.round(faceCount).toLocaleString()} triangles (BVH) · centered spawn.`,
     );
     updateCamera();
   } catch (error) {
@@ -427,16 +460,16 @@ async function loadCharacter(url: string, label: string) {
     characterRoot = root;
     characterAsset = asset;
     bones.clear();
-    bindEuler.clear();
+    bindRotation.clear();
     bindPosition.clear();
 
     for (const name of boneNames) {
       const node = root.findByName(name);
       if (!(node instanceof Entity)) continue;
       bones.set(name, node);
-      const euler = node.getLocalEulerAngles();
+      const rotation = node.getLocalRotation();
       const position = node.getLocalPosition();
-      bindEuler.set(name, { x: euler.x, y: euler.y, z: euler.z });
+      bindRotation.set(name, { x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w });
       bindPosition.set(name, { x: position.x, y: position.y, z: position.z });
     }
 
@@ -466,12 +499,15 @@ const defaultSog = `${base}assets/mall.sog`;
 const defaultPly = `${base}assets/mall.ply`;
 const defaultSpz = `${base}assets/mall.spz`;
 const defaultCollider = `${base}assets/collider.glb`;
+const optimizedCollider = `${base}assets/collider-web.glb`;
 const defaultCharacter = `${base}assets/player.glb`;
 
-if (await exists(defaultCollider)) {
+if (await exists(optimizedCollider)) {
+  await loadCollider(optimizedCollider, "collider-web.glb");
+} else if (await exists(defaultCollider)) {
   await loadCollider(defaultCollider, "collider.glb");
 } else {
-  setCollisionStatus("Choose your collider .glb locally to enable floor/wall collision.");
+  setCollisionStatus("Choose a collider .glb locally to enable collision.");
 }
 
 if (await exists(defaultSog)) {
@@ -555,11 +591,28 @@ fullscreenButton.addEventListener("click", async () => {
   else await document.exitFullscreen();
 });
 
+let perfFrames = 0;
+let perfSeconds = 0;
+let perfCpuMs = 0;
+
 scene.app.on("update", (dt: number) => {
+  const start = performance.now();
   tickPlayer(dt);
   animateCharacter(dt);
   updateCharacterTransform();
   updateCamera();
+
+  perfFrames += 1;
+  perfSeconds += dt;
+  perfCpuMs += performance.now() - start;
+  if (perfSeconds >= 1) {
+    const fps = Math.round(perfFrames / perfSeconds);
+    const cpuPerFrame = (perfCpuMs / perfFrames).toFixed(1);
+    performanceStatus.textContent = `${fps} FPS · game logic ${cpuPerFrame}ms/frame`;
+    perfFrames = 0;
+    perfSeconds = 0;
+    perfCpuMs = 0;
+  }
 });
 
 updateCamera();
