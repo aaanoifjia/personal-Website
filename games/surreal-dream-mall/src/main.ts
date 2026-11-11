@@ -48,9 +48,16 @@ const EYE_HEIGHT = 0.46;
 const PLAYER_RADIUS = 0.11;
 const MAX_STEP = 0.14;
 const MAX_DROP = 0.38;
-// Dreamcore exploration pace: about half the previous speed.
-const WALK_SPEED = 0.42;
-const RUN_SPEED = 0.82;
+// Match world translation to the procedural gait. One full sin() cycle
+// includes a left and right step; the ground travel should be a fraction
+// of the ~0.27 scene-unit-tall character, not multiple body lengths.
+// Keep gait cadence unchanged when tuning how far the character moves.
+const WALK_GAIT_RATE = 4.0; // radians per second
+const RUN_GAIT_RATE = 6.4;
+const WALK_STRIDE_DISTANCE = 0.18; // scene units per full gait cycle
+const RUN_STRIDE_DISTANCE = 0.23;
+const WALK_SPEED = WALK_STRIDE_DISTANCE * WALK_GAIT_RATE / (2 * Math.PI);
+const RUN_SPEED = RUN_STRIDE_DISTANCE * RUN_GAIT_RATE / (2 * Math.PI);
 
 const CHARACTER_SCALE = 0.0015; // Half the original visual size (0.003).
 const CAMERA_DISTANCE = 1.15;
@@ -348,7 +355,7 @@ function animateCharacter(dt: number) {
   const targetBlend = isMoving ? 1 : 0;
   walkBlend += (targetBlend - walkBlend) * (1 - Math.exp(-10 * dt));
 
-  if (isMoving) walkTime += dt * (isRunning ? 6.4 : 4.0);
+  if (isMoving) walkTime += dt * (isRunning ? RUN_GAIT_RATE : WALK_GAIT_RATE);
 
   const phase = Math.sin(walkTime);
   const legAmplitude = (isRunning ? 30 : 20) * walkBlend;
