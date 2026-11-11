@@ -476,10 +476,25 @@ if (await exists(defaultSog)) {
   setSceneStatus("Choose mall.sog (recommended), or the original PINOC .ply / .spz.");
 }
 
-if (await exists(defaultCharacter)) {
-  await loadCharacter(defaultCharacter, "player.glb");
-} else {
-  setCharacterStatus("Upload the rigged character as assets/player.glb, or choose one locally.");
+// Character assets can be overwritten directly in GitHub Pages. Revalidate
+// the original URL so browsers do not keep showing a previous player.glb.
+// A stable ETag/Last-Modified key preserves caching until the file changes.
+try {
+  const response = await fetch(defaultCharacter, {
+    method: "HEAD",
+    cache: "no-store",
+  });
+  if (response.ok) {
+    const revision = response.headers.get("etag")
+      ?? response.headers.get("last-modified")
+      ?? String(Date.now());
+    const versionedCharacter = `${defaultCharacter}?rev=${encodeURIComponent(revision)}`;
+    await loadCharacter(versionedCharacter, "player.glb");
+  } else {
+    setCharacterStatus("Upload the rigged character as assets/player.glb, or choose one locally.");
+  }
+} catch {
+  setCharacterStatus("Could not check player.glb automatically. Use Load player .glb to preview it.");
 }
 
 sceneFileInput.addEventListener("change", async () => {
