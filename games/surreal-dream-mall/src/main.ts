@@ -539,43 +539,52 @@ const defaultCollider = `${base}assets/collider.glb`;
 const optimizedCollider = `${base}assets/collider-web.glb`;
 const defaultCharacter = `${base}assets/player.glb`;
 
-if (await exists(optimizedCollider)) {
-  await loadCollider(optimizedCollider, "collider-web.glb");
-} else if (await exists(defaultCollider)) {
-  await loadCollider(defaultCollider, "collider.glb");
-} else {
-  setCollisionStatus("Choose a collider .glb locally to enable collision.");
-}
-
-if (await exists(defaultSog)) {
-  await loadEnvironment(defaultSog, "mall.sog");
-} else if (await exists(defaultPly)) {
-  await loadEnvironment(defaultPly, "mall.ply");
-} else if (await exists(defaultSpz)) {
-  await loadEnvironment(defaultSpz, "mall.spz");
-} else {
-  setSceneStatus("Choose mall.sog (recommended), or the original PINOC .ply / .spz.");
-}
-
-// Character assets can be overwritten directly in GitHub Pages. Revalidate
-// the original URL so browsers do not keep showing a previous player.glb.
-// A stable ETag/Last-Modified key preserves caching until the file changes.
-try {
-  const response = await fetch(defaultCharacter, {
-    method: "HEAD",
-    cache: "no-store",
-  });
-  if (response.ok) {
-    const revision = response.headers.get("etag")
-      ?? response.headers.get("last-modified")
-      ?? String(Date.now());
-    const versionedCharacter = `${defaultCharacter}?rev=${encodeURIComponent(revision)}`;
-    await loadCharacter(versionedCharacter, "player.glb");
-  } else {
-    setCharacterStatus("Upload the rigged character as assets/player.glb, or choose one locally.");
-  }
-} catch {
-  setCharacterStatus("Could not check player.glb automatically. Use Load player .glb to preview it.");
+// Start downloads without blocking input initialization. In particular,
+// player.glb is ~56MB, which must not postpone registering the Enter button.
+async function loadDefaultAssets() {
+  await Promise.allSettled([
+    (async () => {
+      if (await exists(optimizedCollider)) {
+        await loadCollider(optimizedCollider, "collider-web.glb");
+      } else if (await exists(defaultCollider)) {
+        await loadCollider(defaultCollider, "collider.glb");
+      } else {
+        setCollisionStatus("No collider found; movement will be unrestricted.");
+      }
+    })(),
+    (async () => {
+      if (await exists(defaultSog)) {
+        await loadEnvironment(defaultSog, "mall.sog");
+      } else if (await exists(defaultPly)) {
+        await loadEnvironment(defaultPly, "mall.ply");
+      } else if (await exists(defaultSpz)) {
+        await loadEnvironment(defaultSpz, "mall.spz");
+      } else {
+        setSceneStatus("Choose mall.sog (recommended), or a .ply / .spz.");
+      }
+    })(),
+    (async () => {
+      try {
+        const response = await fetch(defaultCharacter, {
+          method: "HEAD",
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          setCharacterStatus("No player.glb found. Use Load player .glb.");
+          return;
+        }
+        const revision = response.headers.get("etag")
+          ?? response.headers.get("last-modified")
+          ?? String(Date.now());
+        await loadCharacter(
+          `${defaultCharacter}?rev=${encodeURIComponent(revision)}`,
+          "player.glb",
+        );
+      } catch {
+        setCharacterStatus("Could not load player.glb automatically; use the file picker.");
+      }
+    })(),
+  ]);
 }
 
 sceneFileInput.addEventListener("change", async () => {
@@ -597,7 +606,14 @@ characterFileInput.addEventListener("change", async () => {
 });
 
 enterButton.addEventListener("click", () => {
-  if (environmentLoaded) void canvas.requestPointerLock();
+  if (!environmentLoaded) {
+    setSceneStatus("Scene is still loading. The controls are ready; wait for mall.sog loaded.");
+    return;
+  }
+  void canvas.requestPointerLock().catch((error) => {
+    console.error("Pointer lock failed", error);
+    setSceneStatus("Pointer lock failed. Click directly on the scene to retry.");
+  });
 });
 
 canvas.addEventListener("click", () => {
@@ -654,3 +670,4 @@ scene.app.on("update", (dt: number) => {
 });
 
 updateCamera();
+void loadDefaultAssets();
