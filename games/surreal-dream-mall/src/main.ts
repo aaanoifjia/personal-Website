@@ -63,13 +63,18 @@ const WALK_SPEED = WALK_STRIDE_DISTANCE * WALK_GAIT_RATE / (2 * Math.PI);
 const RUN_SPEED = RUN_STRIDE_DISTANCE * RUN_GAIT_RATE / (2 * Math.PI);
 
 const CHARACTER_SCALE = 0.0015; // Half the original visual size (0.003).
-const CAMERA_DISTANCE = 1.15;
+const CAMERA_DEFAULT_DISTANCE = 1.15;
+const CAMERA_MIN_DISTANCE = 0.42;
+const CAMERA_MAX_DISTANCE = 2.5;
+const CAMERA_ZOOM_SPEED = 0.0015;
 const CAMERA_TARGET_HEIGHT = 0.34;
 const CAMERA_MIN_PITCH = -18;
 const CAMERA_MAX_PITCH = 50;
 
 let cameraYaw = 0;
 let cameraPitch = 14;
+let cameraDistance = CAMERA_DEFAULT_DISTANCE;
+let targetCameraDistance = CAMERA_DEFAULT_DISTANCE;
 let characterYaw = 180;
 let environmentLoaded = false;
 let colliderMeshes: THREE.Mesh[] = [];
@@ -104,6 +109,7 @@ type QuaternionSnapshot = { x: number; y: number; z: number; w: number };
 const bones = new Map<BoneName, Entity>();
 const bindRotation = new Map<BoneName, QuaternionSnapshot>();
 const bindPosition = new Map<BoneName, TransformSnapshot>();
+const forearmAxes = new Map<BoneName, THREE.Vector3>();
 
 // Derived from the actual GLB joint orientations. Both upper arms start in
 // an outward A/T-pose. Rotating each upper-arm's bind-local direction into a
@@ -111,6 +117,10 @@ const bindPosition = new Map<BoneName, TransformSnapshot>();
 // Left/right differ in local Z; blind +/-Euler rotations were incorrect.
 const IDLE_LEFT_ARM = new THREE.Quaternion(0.6014, 0, -0.2716, 0.7514).normalize();
 const IDLE_RIGHT_ARM = new THREE.Quaternion(0.6014, 0, 0.2716, 0.7514).normalize();
+// Arm lowering alone preserves the original palms-forward rig. Twist each
+// forearm about its actual elbow-to-wrist bone axis to face the palms toward
+// the hips. The opposite signs keep the pose mirror-symmetric.
+const IDLE_PALM_INWARD_DEGREES = 60;
 const LOCAL_X_AXIS = new THREE.Vector3(1, 0, 0);
 const LOCAL_Y_AXIS = new THREE.Vector3(0, 1, 0);
 const LOCAL_Z_AXIS = new THREE.Vector3(0, 0, 1);
@@ -125,18 +135,20 @@ function updateCharacterTransform() {
   characterRoot.setEulerAngles(0, characterYaw, 0);
 }
 
-function updateCamera() {
+function updateCamera(dt = 1 / 60) {
+  const zoomBlend = 1 - Math.exp(-13 * Math.min(Math.max(dt, 0), 0.1));
+  cameraDistance += (targetCameraDistance - cameraDistance) * zoomBlend;
   const targetX = visualPlayer.x;
   const targetY = visualPlayer.y - EYE_HEIGHT + CAMERA_TARGET_HEIGHT;
   const targetZ = visualPlayer.z;
 
   const yawRad = THREE.MathUtils.degToRad(cameraYaw);
   const pitchRad = THREE.MathUtils.degToRad(cameraPitch);
-  const horizontalDistance = CAMERA_DISTANCE * Math.cos(pitchRad);
+  const horizontalDistance = cameraDistance * Math.cos(pitchRad);
 
   const cameraX = targetX + Math.sin(yawRad) * horizontalDistance;
   const cameraZ = targetZ + Math.cos(yawRad) * horizontalDistance;
-  const cameraY = targetY + Math.sin(pitchRad) * CAMERA_DISTANCE;
+  const cameraY = targetY + Math.sin(pitchRad) * cameraDistance;
 
   scene.cameraEntity.setPosition(cameraX, cameraY, cameraZ);
   scene.cameraEntity.lookAt(targetX, targetY, targetZ);
@@ -206,6 +218,8 @@ function resetPlayer() {
   player.copy(spawn);
   cameraYaw = 0;
   cameraPitch = 14;
+  cameraDistance = CAMERA_DEFAULT_DISTANCE;
+  targetCameraDistance = CAMERA_DEFAULT_DISTANCE;
   characterYaw = 180;
   snapToFloor();
   visualPlayer.copy(player);
@@ -337,6 +351,15 @@ function setBoneOffset(name: BoneName, x = 0, y = 0, z = 0) {
   const q = new THREE.Quaternion(base.x, base.y, base.z, base.w);
   if (name === "mixamorigLeftArm") q.multiply(IDLE_LEFT_ARM);
   if (name === "mixamorigRightArm") q.multiply(IDLE_RIGHT_ARM);
+  if (name === "mixamorigLeftForeArm" || name === "mixamorigRightForeArm") {
+    const axis = forearmAxes.get(name);
+    if (axis) {
+      const degrees = name === "mixamorigLeftForeArm"
+        ? IDLE_PALM_INWARD_DEGREES
+        : -IDLE_PALM_INWARD_DEGREES;
+      q.multiply(new THREE.Quaternion().setFromAxisAngle(axis, THREE.MathUtils.degToRad(degrees)));
+    }
+  }
   if (x) q.multiply(new THREE.Quaternion().setFromAxisAngle(LOCAL_X_AXIS, THREE.MathUtils.degToRad(x)));
   if (y) q.multiply(new THREE.Quaternion().setFromAxisAngle(LOCAL_Y_AXIS, THREE.MathUtils.degToRad(y)));
   if (z) q.multiply(new THREE.Quaternion().setFromAxisAngle(LOCAL_Z_AXIS, THREE.MathUtils.degToRad(z)));
@@ -502,6 +525,20 @@ async function loadCharacter(url: string, label: string) {
     bones.clear();
     bindRotation.clear();
     bindPosition.clear();
+    forearmAxes.clear();
+
+    // Determine twist axes from the GLB's true joint geometry rather than
+    // assuming each mesh has the same local Y orientation.
+    for (const side of ["Left", "Right"] as const) {
+      const forearmName = `mixamorig${side}ForeArm` as BoneName;
+      const forearm = root.findByName(forearmName);
+      const wrist = root.findByName(`mixamorig${side}Hand_end`);
+      if (forearm instanceof Entity && wrist instanceof Entity) {
+        const wristOffset = wrist.getLocalPosition();
+        const axis = new THREE.Vector3(wristOffset.x, wristOffset.y, wristOffset.z);
+        if (axis.lengthSq() > 1e-8) forearmAxes.set(forearmName, axis.normalize());
+      }
+    }
 
     for (const name of boneNames) {
       const node = root.findByName(name);
@@ -634,6 +671,19 @@ document.addEventListener("mousemove", (event) => {
   cameraPitch = THREE.MathUtils.clamp(cameraPitch, CAMERA_MIN_PITCH, CAMERA_MAX_PITCH);
 });
 
+// Wheel up zooms in; wheel down zooms out. Works with pointer lock and when
+// hovering the canvas before entering. Delta mode is normalized for mice
+// that report lines or pages instead of pixels.
+canvas.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  const deltaPixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1);
+  targetCameraDistance = THREE.MathUtils.clamp(
+    targetCameraDistance * Math.exp(deltaPixels * CAMERA_ZOOM_SPEED),
+    CAMERA_MIN_DISTANCE,
+    CAMERA_MAX_DISTANCE,
+  );
+}, { passive: false });
+
 document.addEventListener("keydown", (event) => {
   keys.add(event.code);
   if (event.code === "KeyR") resetPlayer();
@@ -657,7 +707,7 @@ scene.app.on("update", (dt: number) => {
   updateVisualPlayer(dt);
   animateCharacter(dt);
   updateCharacterTransform();
-  updateCamera();
+  updateCamera(dt);
 
   perfFrames += 1;
   perfSeconds += dt;
