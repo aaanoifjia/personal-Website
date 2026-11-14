@@ -1,19 +1,28 @@
 # Surreal Dream Mall
 
-Standalone web-game prototype for the PINOC/JST-2 dream-mall scene.
+A browser-first first-person dreamcore mall exploration game made from a
+PINOC/JST-2 Gaussian-splat environment.
 
-## Current stack
+## Branches
 
-- PINOC / JST-2 environment: `.sog` (preferred), `.ply`, or `.spz`
-- Gaussian splat renderer: `@viggle/splat-engine@0.3.2`
-- PlayCanvas runtime: `playcanvas@2.23.3`
-- Third-person controller, follow camera, and collision raycasts: `three@0.170`
-- Build/dev server: Vite
+- `main`: **first-person** camera, invisible player controller and optimized
+  collision, splat rendering, music player, and FPS monitoring.
+- `backup/third-person-2026-11-14`: **third-person backup** with visible,
+  rigged Mixamo-style `player.glb`, procedural Idle/Walk/Run and follow camera.
+  Do not overwrite this branch with first-person changes.
 
-The deployed scene uses PlayCanvas SOG. The app also accepts `.ply` and `.spz`
-for local iteration or compatibility with raw scene exports.
+The corresponding deployed third-person snapshot, including hosted game assets,
+is backed up in `aaanoifjia/aaanoifjia.github.io` on the same branch name.
 
-## Run locally
+## Technology
+
+- Visual environment: Gaussian Splat `.sog` (preferred), `.ply`, or `.spz`
+- Rendering: `@viggle/splat-engine@0.3.2` + PlayCanvas
+- Navigation/collision: Three.js and `three-mesh-bvh`
+- Bundler: Vite + TypeScript
+- Music player: `src/music-player.ts` (bundled playlist, volume and local uploads)
+
+## Start locally
 
 ```bash
 cd games/surreal-dream-mall
@@ -21,66 +30,45 @@ npm install
 npm run dev
 ```
 
-Then:
+Open the dev server and load `mall.sog` and `collider-web.glb` with
+the file pickers, or put the files in `public/assets/` to load automatically.
 
-1. Wait for the hosted `mall.sog`, `collider-web.glb` (or `collider.glb`), and
-   `player.glb` to load automatically; alternatively choose local files.
-2. Select the exported PINOC scene
-3. Click **Load collider .glb**
-4. Select the collider GLB
-5. Click **Enter**
-6. Use WASD + mouse to explore in third person
+## Controls on main
 
-Controls:
+- **WASD / arrow keys:** walk relative to camera direction
+- **Mouse:** look around (pointer lock)
+- **Mouse wheel:** zoom by adjusting first-person field of view
+- **Shift:** run
+- **R:** reset position, direction, and field of view
+- **Esc:** release pointer lock
 
-- WASD / arrow keys: move
-- Mouse: look
-- Shift: run
-- R: reset player
-- Esc: release pointer lock
+The main branch does **not** load or display `player.glb`; no third-person
+animation is executed. The asset remains available in the backup deployment
+branch and on the hosting repository.
 
-## Asset layout for deployment
+## Assets
 
-When assets are ready for permanent hosting:
+Preferred relative game asset URLs:
 
-```
-public/assets/
-  mall.sog            # preferred visual Gaussian-splat scene
-  collider-web.glb    # preferred lightweight collision proxy
-  collider.glb        # fallback collision proxy
-  player.glb          # rigged Mixamo-style player character
+```text
+assets/mall.sog          # rendered environment
+assets/collider-web.glb  # lightweight invisible collision proxy
+assets/collider.glb      # fallback only
 ```
 
-The app checks `mall.sog`, then `mall.ply`, then `mall.spz`. It prefers
-`collider-web.glb` and falls back to `collider.glb`.
+`mall.ply` and `mall.spz` are accepted as environment fallbacks.
+Visual splat and collider coordinates must stay aligned.
 
-## PLY / collider alignment
-
-The supplied PINOC PLY and collider GLB are already in nearly the same coordinate system and scale. No initial scene-scale conversion is required.
-
-Approximate bounds:
-
-- PLY: X 8.84, Y 2.16, Z 9.50 units
-- collider: X 7.91, Y 1.77, Z 8.46 units
-
-## Production optimization
-
-The current PLY is about 68 MB and contains ~1.05M splats. It is suitable for development, but should be compressed before public deployment.
-
-Recommended production target: SOG using PlayCanvas SplatTransform:
-
-```bash
-npm install -g @playcanvas/splat-transform
-splat-transform "Surreal Dream Mall.ply" mall.sog
-```
-
-SOG is the recommended PlayCanvas runtime format for web delivery.
+The full original collider can be >1M triangles. Use the generated
+`collider-web.glb` and BVH-accelerated raycasts for real-time navigation.
 
 ## Deployment
 
-The GitHub Pages workflow lives in the `aaanoifjia.github.io` repository. It
-checks out this repository's `main` branch, builds it with Node 22, copies the
-generated `dist/` into `surreal-dream-mall/`, and preserves the large assets.
-Because the workflow is triggered from the Pages repository, a source-only
-push needs a manual workflow dispatch until cross-repository triggering is
-added.
+Game source: `aaanoifjia/personal-Website/games/surreal-dream-mall`.
+Production site: https://aaanoifjia.github.io/surreal-dream-mall/
+
+The workflow is in the Pages repository at
+`.github/workflows/deploy-surreal-dream-mall.yml`. It checks out the source
+`main` branch, builds Vite, copies `dist` into
+`surreal-dream-mall/`, and preserves large uploaded assets. Source-only
+commits require triggering that workflow manually.
