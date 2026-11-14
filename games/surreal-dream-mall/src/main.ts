@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { acceleratedRaycast, MeshBVH } from "three-mesh-bvh";
 import "./style.css";
+import { initMusicPlayer } from "./music-player";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#scene");
 const sceneStatus = document.querySelector<HTMLDivElement>("#scene-status");
@@ -673,3 +674,4 @@ scene.app.on("update", (dt: number) => {
 
 updateCamera();
 void loadDefaultAssets();
+initMusicPlayer();
