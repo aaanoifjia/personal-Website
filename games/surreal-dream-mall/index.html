@@ -14,7 +14,6 @@
       <div class="title">Surreal Dream Mall</div>
       <div id="scene-status" class="status">Preparing splat renderer…</div>
       <div id="collision-status" class="status secondary">Preparing collider…</div>
-      <div id="character-status" class="status secondary">Preparing character…</div>
       <div id="performance-status" class="status secondary">Measuring FPS…</div>
 
       <div class="actions">
@@ -26,10 +25,6 @@
           Load collider .glb
           <input id="collider-file" type="file" accept=".glb" />
         </label>
-        <label class="upload">
-          Load player .glb
-          <input id="character-file" type="file" accept=".glb" />
-        </label>
       </div>
 
       <div class="actions">
@@ -38,7 +33,7 @@
         <button id="fullscreen" type="button">Fullscreen</button>
       </div>
 
-      <div class="hint">WASD / arrows move · mouse orbits camera · mouse wheel zooms in/out · Shift runs · R resets · Esc releases mouse</div>
+      <div class="hint">First person · WASD / arrows move · mouse looks around · wheel zooms (FOV) · Shift runs · R resets · Esc releases mouse</div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>
