@@ -25,7 +25,10 @@ Build a browser-first exploratory 3D game around a PINOC/JST-2 Gaussian-splat en
 
 ## Current gameplay baseline
 
-- Use third-person WASD navigation, a pointer-locked follow camera, and a
-  rigged Mixamo-style character with procedural idle/walk/run animation.
-- Keep movement speed and gait cadence synchronized whenever either is tuned.
+- The `main` branch uses first-person WASD navigation with pointer-locked
+  mouse look and scroll-wheel FOV zoom. No rigged character is rendered or loaded.
+- The previous third-person follow camera and Mixamo character controller are
+  preserved on `backup/third-person-2026-11-14`; do not change that branch when
+  implementing first-person improvements.
+- Keep scene collision, performance counter, and music-player functional.
 - The visual splat and the collision mesh must remain aligned.
