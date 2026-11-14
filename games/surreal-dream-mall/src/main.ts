@@ -51,9 +51,11 @@ const MAX_DROP = 0.38;
 // Match world translation to the procedural gait. One full sin() cycle
 // includes a left and right step; the ground travel should be a fraction
 // of the ~0.27 scene-unit-tall character, not multiple body lengths.
-// Keep gait cadence unchanged when tuning how far the character moves.
-const WALK_GAIT_RATE = 4.0; // radians per second
-const RUN_GAIT_RATE = 6.4;
+// Keep gait cadence and world translation matched when tuning movement speed.
+// Increase cadence and matched world travel together. This doubles the
+// previous walk/run speed while keeping the feet from visibly skating.
+const WALK_GAIT_RATE = 8.0; // radians per second
+const RUN_GAIT_RATE = 12.8;
 const WALK_STRIDE_DISTANCE = 0.18; // scene units per full gait cycle
 const RUN_STRIDE_DISTANCE = 0.23;
 const WALK_SPEED = WALK_STRIDE_DISTANCE * WALK_GAIT_RATE / (2 * Math.PI);

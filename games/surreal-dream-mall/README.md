@@ -4,13 +4,14 @@ Standalone web-game prototype for the PINOC/JST-2 dream-mall scene.
 
 ## Current stack
 
-- PINOC / JST-2 environment: `.ply` or `.spz`
+- PINOC / JST-2 environment: `.sog` (preferred), `.ply`, or `.spz`
 - Gaussian splat renderer: `@viggle/splat-engine@0.3.2`
 - PlayCanvas runtime: `playcanvas@2.23.3`
-- First-person controller and collision raycasts: `three@0.170`
+- Third-person controller, follow camera, and collision raycasts: `three@0.170`
 - Build/dev server: Vite
 
-Viggle's current web engine directly supports `.ply` and `.spz` environment splats, so a successful PLY export is enough for development.
+The deployed scene uses PlayCanvas SOG. The app also accepts `.ply` and `.spz`
+for local iteration or compatibility with raw scene exports.
 
 ## Run locally
 
@@ -22,12 +23,13 @@ npm run dev
 
 Then:
 
-1. Click **Load PINOC .ply / .spz**
+1. Wait for the hosted `mall.sog`, `collider-web.glb` (or `collider.glb`), and
+   `player.glb` to load automatically; alternatively choose local files.
 2. Select the exported PINOC scene
 3. Click **Load collider .glb**
 4. Select the collider GLB
 5. Click **Enter**
-6. Use WASD + mouse to explore
+6. Use WASD + mouse to explore in third person
 
 Controls:
 
@@ -43,11 +45,14 @@ When assets are ready for permanent hosting:
 
 ```
 public/assets/
-  mall.ply        # or mall.spz / mall.sog after compression
-  collider.glb
+  mall.sog            # preferred visual Gaussian-splat scene
+  collider-web.glb    # preferred lightweight collision proxy
+  collider.glb        # fallback collision proxy
+  player.glb          # rigged Mixamo-style player character
 ```
 
-The app checks `mall.ply` first, then `mall.spz`.
+The app checks `mall.sog`, then `mall.ply`, then `mall.spz`. It prefers
+`collider-web.glb` and falls back to `collider.glb`.
 
 ## PLY / collider alignment
 
@@ -73,4 +78,9 @@ SOG is the recommended PlayCanvas runtime format for web delivery.
 
 ## Deployment
 
-A true subdomain such as `dream-mall.example.com` requires DNS access to a custom domain. Until DNS/hosting is connected, this folder remains independently deployable as a Vite app.
+The GitHub Pages workflow lives in the `aaanoifjia.github.io` repository. It
+checks out this repository's `main` branch, builds it with Node 22, copies the
+generated `dist/` into `surreal-dream-mall/`, and preserves the large assets.
+Because the workflow is triggered from the Pages repository, a source-only
+push needs a manual workflow dispatch until cross-repository triggering is
+added.
