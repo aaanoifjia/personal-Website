@@ -9,21 +9,24 @@ import { initMusicPlayer } from "./music-player";
 const canvas = document.querySelector<HTMLCanvasElement>("#scene");
 const sceneStatus = document.querySelector<HTMLDivElement>("#scene-status");
 const collisionStatus = document.querySelector<HTMLDivElement>("#collision-status");
-const characterStatus = document.querySelector<HTMLDivElement>("#character-status");
 const performanceStatus = document.querySelector<HTMLDivElement>("#performance-status");
 const sceneFileInput = document.querySelector<HTMLInputElement>("#scene-file");
 const colliderFileInput = document.querySelector<HTMLInputElement>("#collider-file");
-const characterFileInput = document.querySelector<HTMLInputElement>("#character-file");
 const enterButton = document.querySelector<HTMLButtonElement>("#enter-game");
 const resetButton = document.querySelector<HTMLButtonElement>("#reset-player");
 const fullscreenButton = document.querySelector<HTMLButtonElement>("#fullscreen");
 
-if (!canvas || !sceneStatus || !collisionStatus || !characterStatus || !performanceStatus || !sceneFileInput || !colliderFileInput || !characterFileInput || !enterButton || !resetButton || !fullscreenButton) {
+if (!canvas || !sceneStatus || !collisionStatus || !performanceStatus || !sceneFileInput || !colliderFileInput || !enterButton || !resetButton || !fullscreenButton) {
   throw new Error("Required DOM elements are missing.");
 }
 
-const scene = await Scene.create(canvas, { fov: 50, depth: true });
-// Cap pixel density for the ~1M-splat scene. Keep the original color/materials.
+// Main branch: first-person exploration. The playable third-person character
+// version is preserved on backup/third-person-2026-11-14.
+const DEFAULT_FOV = 50;
+const MIN_FOV = 35;
+const MAX_FOV = 70;
+const FOV_ZOOM_SENSITIVITY = 0.025;
+const scene = await Scene.create(canvas, { fov: DEFAULT_FOV, depth: true });
 scene.app.graphicsDevice.maxPixelRatio = Math.min(window.devicePixelRatio || 1, 1.25);
 scene.start();
 
@@ -33,9 +36,6 @@ SkyDome.create(scene, {
 });
 
 const player = new THREE.Vector3(0, 0.12, 3.05);
-// Keep collision/physics independent from the displayed position. Generated
-// collider surfaces have slight unevenness, which previously propagated as
-// visible shaking of both the character and follow camera.
 const visualPlayer = player.clone();
 const spawn = player.clone();
 const keys = new Set<string>();
@@ -49,109 +49,33 @@ const EYE_HEIGHT = 0.46;
 const PLAYER_RADIUS = 0.11;
 const MAX_STEP = 0.14;
 const MAX_DROP = 0.38;
-// Match world translation to the procedural gait. One full sin() cycle
-// includes a left and right step; the ground travel should be a fraction
-// of the ~0.27 scene-unit-tall character, not multiple body lengths.
-// Keep gait cadence and world translation matched when tuning movement speed.
-// Increase cadence and matched world travel together. This doubles the
-// previous walk/run speed while keeping the feet from visibly skating.
-const WALK_GAIT_RATE = 8.0; // radians per second
-const RUN_GAIT_RATE = 12.8;
-const WALK_STRIDE_DISTANCE = 0.18; // scene units per full gait cycle
-const RUN_STRIDE_DISTANCE = 0.23;
-const WALK_SPEED = WALK_STRIDE_DISTANCE * WALK_GAIT_RATE / (2 * Math.PI);
-const RUN_SPEED = RUN_STRIDE_DISTANCE * RUN_GAIT_RATE / (2 * Math.PI);
-
-const CHARACTER_SCALE = 0.0015; // Half the original visual size (0.003).
-const CAMERA_DEFAULT_DISTANCE = 1.15;
-const CAMERA_MIN_DISTANCE = 0.42;
-const CAMERA_MAX_DISTANCE = 2.5;
-const CAMERA_ZOOM_SPEED = 0.0015;
-const CAMERA_TARGET_HEIGHT = 0.34;
-const CAMERA_MIN_PITCH = -18;
-const CAMERA_MAX_PITCH = 50;
+// Restore the original first-person exploration pace. No visible model or
+// stride cycle needs to be synchronized with world translation.
+const WALK_SPEED = 0.92;
+const RUN_SPEED = 1.55;
+const CAMERA_MIN_PITCH = -82;
+const CAMERA_MAX_PITCH = 82;
 
 let cameraYaw = 0;
-let cameraPitch = 14;
-let cameraDistance = CAMERA_DEFAULT_DISTANCE;
-let targetCameraDistance = CAMERA_DEFAULT_DISTANCE;
-let characterYaw = 180;
+let cameraPitch = 0;
+let cameraFov = DEFAULT_FOV;
+let targetFov = DEFAULT_FOV;
 let environmentLoaded = false;
 let colliderMeshes: THREE.Mesh[] = [];
-let characterRoot: Entity | null = null;
-let characterAsset: Asset | null = null;
-let characterLoaded = false;
-let walkTime = 0;
-let walkBlend = 0;
-let isMoving = false;
-let isRunning = false;
-
-const boneNames = [
-  "mixamorigHips",
-  "mixamorigSpine",
-  "mixamorigSpine1",
-  "mixamorigSpine2",
-  "mixamorigLeftArm",
-  "mixamorigRightArm",
-  "mixamorigLeftForeArm",
-  "mixamorigRightForeArm",
-  "mixamorigLeftUpLeg",
-  "mixamorigRightUpLeg",
-  "mixamorigLeftLeg",
-  "mixamorigRightLeg",
-  "mixamorigLeftFoot",
-  "mixamorigRightFoot",
-] as const;
-
-type BoneName = (typeof boneNames)[number];
-type TransformSnapshot = { x: number; y: number; z: number };
-type QuaternionSnapshot = { x: number; y: number; z: number; w: number };
-const bones = new Map<BoneName, Entity>();
-const bindRotation = new Map<BoneName, QuaternionSnapshot>();
-const bindPosition = new Map<BoneName, TransformSnapshot>();
-const forearmAxes = new Map<BoneName, THREE.Vector3>();
-
-// Derived from the actual GLB joint orientations. Both upper arms start in
-// an outward A/T-pose. Rotating each upper-arm's bind-local direction into a
-// slightly splayed downward vector makes a relaxed, natural Idle stance.
-// Left/right differ in local Z; blind +/-Euler rotations were incorrect.
-const IDLE_LEFT_ARM = new THREE.Quaternion(0.6014, 0, -0.2716, 0.7514).normalize();
-const IDLE_RIGHT_ARM = new THREE.Quaternion(0.6014, 0, 0.2716, 0.7514).normalize();
-// Arm lowering alone preserves the original palms-forward rig. Twist each
-// forearm about its actual elbow-to-wrist bone axis to face the palms toward
-// the hips. The opposite signs keep the pose mirror-symmetric.
-const IDLE_PALM_INWARD_DEGREES = 60;
-const LOCAL_X_AXIS = new THREE.Vector3(1, 0, 0);
-const LOCAL_Y_AXIS = new THREE.Vector3(0, 1, 0);
-const LOCAL_Z_AXIS = new THREE.Vector3(0, 0, 1);
 
 const setSceneStatus = (message: string) => { sceneStatus.textContent = message; };
 const setCollisionStatus = (message: string) => { collisionStatus.textContent = message; };
-const setCharacterStatus = (message: string) => { characterStatus.textContent = message; };
-
-function updateCharacterTransform() {
-  if (!characterRoot) return;
-  characterRoot.setPosition(visualPlayer.x, visualPlayer.y - EYE_HEIGHT, visualPlayer.z);
-  characterRoot.setEulerAngles(0, characterYaw, 0);
-}
 
 function updateCamera(dt = 1 / 60) {
-  const zoomBlend = 1 - Math.exp(-13 * Math.min(Math.max(dt, 0), 0.1));
-  cameraDistance += (targetCameraDistance - cameraDistance) * zoomBlend;
-  const targetX = visualPlayer.x;
-  const targetY = visualPlayer.y - EYE_HEIGHT + CAMERA_TARGET_HEIGHT;
-  const targetZ = visualPlayer.z;
+  // Smooth camera height over irregular scanned floors; the camera is placed
+  // at the player's eye, not offset behind a visible character.
+  scene.cameraEntity.setPosition(visualPlayer.x, visualPlayer.y, visualPlayer.z);
+  scene.cameraEntity.setEulerAngles(cameraPitch, cameraYaw, 0);
 
-  const yawRad = THREE.MathUtils.degToRad(cameraYaw);
-  const pitchRad = THREE.MathUtils.degToRad(cameraPitch);
-  const horizontalDistance = cameraDistance * Math.cos(pitchRad);
-
-  const cameraX = targetX + Math.sin(yawRad) * horizontalDistance;
-  const cameraZ = targetZ + Math.cos(yawRad) * horizontalDistance;
-  const cameraY = targetY + Math.sin(pitchRad) * cameraDistance;
-
-  scene.cameraEntity.setPosition(cameraX, cameraY, cameraZ);
-  scene.cameraEntity.lookAt(targetX, targetY, targetZ);
+  const blend = 1 - Math.exp(-14 * Math.min(Math.max(dt, 0), 0.1));
+  cameraFov += (targetFov - cameraFov) * blend;
+  const camera = scene.cameraEntity.camera;
+  if (camera) camera.fov = cameraFov;
 }
 
 function worldNormalForHit(hit: THREE.Intersection) {
@@ -214,17 +138,15 @@ function findGroundFloorFromAbove(x: number, z: number, bounds: THREE.Box3): num
   return Math.min(...walkable.map((hit) => hit.point.y));
 }
 
+
 function resetPlayer() {
   player.copy(spawn);
   cameraYaw = 0;
-  cameraPitch = 14;
-  cameraDistance = CAMERA_DEFAULT_DISTANCE;
-  targetCameraDistance = CAMERA_DEFAULT_DISTANCE;
-  characterYaw = 180;
+  cameraPitch = 0;
+  cameraFov = DEFAULT_FOV;
+  targetFov = DEFAULT_FOV;
   snapToFloor();
   visualPlayer.copy(player);
-  resetProceduralPose();
-  updateCharacterTransform();
   updateCamera();
 }
 
@@ -288,9 +210,8 @@ function updateVisualPlayer(dt: number) {
   visualPlayer.y += (player.y - visualPlayer.y) * verticalBlend;
 }
 
+
 function tickPlayer(dt: number) {
-  isMoving = false;
-  isRunning = false;
   if (document.pointerLockElement !== canvas) return;
 
   let forward = 0;
@@ -301,107 +222,25 @@ function tickPlayer(dt: number) {
   if (keys.has("KeyA") || keys.has("ArrowLeft")) right -= 1;
   if (forward === 0 && right === 0) return;
 
-  const length = Math.hypot(forward, right) || 1;
+  const length = Math.hypot(forward, right);
   forward /= length;
   right /= length;
 
-  const angle = THREE.MathUtils.degToRad(cameraYaw);
-  isRunning = keys.has("ShiftLeft") || keys.has("ShiftRight");
-  const speed = isRunning ? RUN_SPEED : WALK_SPEED;
-  const step = speed * Math.min(dt, 0.1);
-
-  const forwardX = -Math.sin(angle);
-  const forwardZ = -Math.cos(angle);
-  const rightX = Math.cos(angle);
-  const rightZ = -Math.sin(angle);
-
+  const yawRadians = THREE.MathUtils.degToRad(cameraYaw);
+  const run = keys.has("ShiftLeft") || keys.has("ShiftRight");
+  const step = (run ? RUN_SPEED : WALK_SPEED) * Math.min(dt, 0.1);
+  const forwardX = -Math.sin(yawRadians);
+  const forwardZ = -Math.cos(yawRadians);
+  const rightX = Math.cos(yawRadians);
+  const rightZ = -Math.sin(yawRadians);
   const dx = (forwardX * forward + rightX * right) * step;
   const dz = (forwardZ * forward + rightZ * right) * step;
 
-  // Solve the intended XZ displacement as one move. Only use axis sliding if
-  // blocked, rather than snapping the floor height twice per animation frame.
-  const beforeX = player.x;
-  const beforeZ = player.z;
+  // Move diagonally first; slide along an axis if blocked by a wall.
   if (!tryMove(dx, dz)) {
     tryMove(dx, 0);
     tryMove(0, dz);
   }
-  isMoving = Math.hypot(player.x - beforeX, player.z - beforeZ) > 1e-5;
-
-  if (isMoving) {
-    // Face the stable intended input direction rather than the jitter-prone
-    // per-frame collision result, which can oscillate between X and Z.
-    const targetYaw = THREE.MathUtils.radToDeg(Math.atan2(dx, dz));
-    characterYaw = dampAngle(characterYaw, targetYaw, 12, dt);
-  }
-}
-
-function dampAngle(current: number, target: number, lambda: number, dt: number) {
-  const delta = ((target - current + 540) % 360) - 180;
-  return current + delta * (1 - Math.exp(-lambda * dt));
-}
-
-function setBoneOffset(name: BoneName, x = 0, y = 0, z = 0) {
-  const bone = bones.get(name);
-  const base = bindRotation.get(name);
-  if (!bone || !base) return;
-
-  // Work relative to the actual local bind quaternion, not Euler angles.
-  // Apply the neutral arm correction even with zero walking input.
-  const q = new THREE.Quaternion(base.x, base.y, base.z, base.w);
-  if (name === "mixamorigLeftArm") q.multiply(IDLE_LEFT_ARM);
-  if (name === "mixamorigRightArm") q.multiply(IDLE_RIGHT_ARM);
-  if (name === "mixamorigLeftForeArm" || name === "mixamorigRightForeArm") {
-    const axis = forearmAxes.get(name);
-    if (axis) {
-      const degrees = name === "mixamorigLeftForeArm"
-        ? IDLE_PALM_INWARD_DEGREES
-        : -IDLE_PALM_INWARD_DEGREES;
-      q.multiply(new THREE.Quaternion().setFromAxisAngle(axis, THREE.MathUtils.degToRad(degrees)));
-    }
-  }
-  if (x) q.multiply(new THREE.Quaternion().setFromAxisAngle(LOCAL_X_AXIS, THREE.MathUtils.degToRad(x)));
-  if (y) q.multiply(new THREE.Quaternion().setFromAxisAngle(LOCAL_Y_AXIS, THREE.MathUtils.degToRad(y)));
-  if (z) q.multiply(new THREE.Quaternion().setFromAxisAngle(LOCAL_Z_AXIS, THREE.MathUtils.degToRad(z)));
-  bone.setLocalRotation(q.x, q.y, q.z, q.w);
-}
-
-function resetProceduralPose() {
-  for (const name of boneNames) {
-    setBoneOffset(name); // Arms hang naturally even when fully idle.
-    const bone = bones.get(name);
-    const position = bindPosition.get(name);
-    if (bone && position) bone.setLocalPosition(position.x, position.y, position.z);
-  }
-}
-
-function animateCharacter(dt: number) {
-  if (!characterRoot || bones.size === 0) return;
-
-  const targetBlend = isMoving ? 1 : 0;
-  walkBlend += (targetBlend - walkBlend) * (1 - Math.exp(-10 * dt));
-
-  if (isMoving) walkTime += dt * (isRunning ? RUN_GAIT_RATE : WALK_GAIT_RATE);
-
-  const phase = Math.sin(walkTime);
-  const legAmplitude = (isRunning ? 30 : 20) * walkBlend;
-  const armAmplitude = (isRunning ? 19 : 12) * walkBlend;
-  const leftKnee = Math.max(0, -phase) * (isRunning ? 24 : 12) * walkBlend;
-  const rightKnee = Math.max(0, phase) * (isRunning ? 24 : 12) * walkBlend;
-
-  setBoneOffset("mixamorigLeftUpLeg", phase * legAmplitude);
-  setBoneOffset("mixamorigRightUpLeg", -phase * legAmplitude);
-  setBoneOffset("mixamorigLeftLeg", -leftKnee);
-  setBoneOffset("mixamorigRightLeg", -rightKnee);
-  setBoneOffset("mixamorigLeftArm", -phase * armAmplitude);
-  setBoneOffset("mixamorigRightArm", phase * armAmplitude);
-  setBoneOffset("mixamorigLeftForeArm", 0, 0, 5 * walkBlend);
-  setBoneOffset("mixamorigRightForeArm", 0, 0, -5 * walkBlend);
-  setBoneOffset("mixamorigSpine", 0, phase * 2.4 * walkBlend);
-  setBoneOffset("mixamorigSpine1", 0, -phase * 1.8 * walkBlend);
-
-  // Deliberately no hips/root translation while diagnosing jitter:
-  // all walking motion is confined to arm/leg joint rotations.
 }
 
 async function loadEnvironment(url: string, label: string) {
@@ -492,75 +331,6 @@ async function loadCollider(url: string, label: string) {
   }
 }
 
-async function loadCharacter(url: string, label: string) {
-  try {
-    setCharacterStatus(`Loading character: ${label}…`);
-    const asset = new Asset(label, "container", { url, filename: label });
-    scene.app.assets.add(asset);
-
-    await new Promise<void>((resolve, reject) => {
-      asset.ready(() => resolve());
-      asset.once("error", (error) => reject(error));
-      scene.app.assets.load(asset);
-    });
-
-    const resource = asset.resource;
-    if (!resource) throw new Error("Character container loaded without a resource.");
-    const root = resource.instantiateRenderEntity({ castShadows: false });
-    root.name = "PlayerCharacter";
-    root.setLocalScale(CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE);
-
-    // Replace only after the new GLB has successfully loaded. Keep the old
-    // character visible on errors, and release the old model's resources.
-    const previousRoot = characterRoot;
-    const previousAsset = characterAsset;
-    if (previousRoot) previousRoot.destroy();
-    if (previousAsset) {
-      scene.app.assets.remove(previousAsset);
-      previousAsset.unload();
-    }
-    scene.app.root.addChild(root);
-    characterRoot = root;
-    characterAsset = asset;
-    bones.clear();
-    bindRotation.clear();
-    bindPosition.clear();
-    forearmAxes.clear();
-
-    // Determine twist axes from the GLB's true joint geometry rather than
-    // assuming each mesh has the same local Y orientation.
-    for (const side of ["Left", "Right"] as const) {
-      const forearmName = `mixamorig${side}ForeArm` as BoneName;
-      const forearm = root.findByName(forearmName);
-      const wrist = root.findByName(`mixamorig${side}Hand_end`);
-      if (forearm instanceof Entity && wrist instanceof Entity) {
-        const wristOffset = wrist.getLocalPosition();
-        const axis = new THREE.Vector3(wristOffset.x, wristOffset.y, wristOffset.z);
-        if (axis.lengthSq() > 1e-8) forearmAxes.set(forearmName, axis.normalize());
-      }
-    }
-
-    for (const name of boneNames) {
-      const node = root.findByName(name);
-      if (!(node instanceof Entity)) continue;
-      bones.set(name, node);
-      const rotation = node.getLocalRotation();
-      const position = node.getLocalPosition();
-      bindRotation.set(name, { x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w });
-      bindPosition.set(name, { x: position.x, y: position.y, z: position.z });
-    }
-
-    characterLoaded = true;
-    walkTime = 0;
-    walkBlend = 0;
-    resetProceduralPose();
-    updateCharacterTransform();
-    setCharacterStatus(`${label} ready · ${bones.size}/${boneNames.length} walk-control bones detected.`);
-  } catch (error) {
-    console.error(error);
-    setCharacterStatus("Character failed to load. Make sure player.glb is a rigged GLB with the Mixamo skeleton.");
-  }
-}
 
 async function exists(url: string) {
   try {
@@ -571,16 +341,16 @@ async function exists(url: string) {
   }
 }
 
+
 const base = import.meta.env.BASE_URL;
 const defaultSog = `${base}assets/mall.sog`;
 const defaultPly = `${base}assets/mall.ply`;
 const defaultSpz = `${base}assets/mall.spz`;
 const defaultCollider = `${base}assets/collider.glb`;
 const optimizedCollider = `${base}assets/collider-web.glb`;
-const defaultCharacter = `${base}assets/player.glb`;
 
-// Start downloads without blocking input initialization. In particular,
-// player.glb is ~56MB, which must not postpone registering the Enter button.
+// No player.glb request: first-person main is intentionally body-less.
+// Keep collision and splat loading concurrent so controls initialize early.
 async function loadDefaultAssets() {
   await Promise.allSettled([
     (async () => {
@@ -603,27 +373,6 @@ async function loadDefaultAssets() {
         setSceneStatus("Choose mall.sog (recommended), or a .ply / .spz.");
       }
     })(),
-    (async () => {
-      try {
-        const response = await fetch(defaultCharacter, {
-          method: "HEAD",
-          cache: "no-store",
-        });
-        if (!response.ok) {
-          setCharacterStatus("No player.glb found. Use Load player .glb.");
-          return;
-        }
-        const revision = response.headers.get("etag")
-          ?? response.headers.get("last-modified")
-          ?? String(Date.now());
-        await loadCharacter(
-          `${defaultCharacter}?rev=${encodeURIComponent(revision)}`,
-          "player.glb",
-        );
-      } catch {
-        setCharacterStatus("Could not load player.glb automatically; use the file picker.");
-      }
-    })(),
   ]);
 }
 
@@ -639,15 +388,9 @@ colliderFileInput.addEventListener("change", async () => {
   await loadCollider(URL.createObjectURL(file), file.name);
 });
 
-characterFileInput.addEventListener("change", async () => {
-  const file = characterFileInput.files?.[0];
-  if (!file) return;
-  await loadCharacter(URL.createObjectURL(file), file.name);
-});
-
 enterButton.addEventListener("click", () => {
   if (!environmentLoaded) {
-    setSceneStatus("Scene is still loading. The controls are ready; wait for mall.sog loaded.");
+    setSceneStatus("Scene is still loading. Wait for mall.sog loaded.");
     return;
   }
   void canvas.requestPointerLock().catch((error) => {
@@ -657,30 +400,34 @@ enterButton.addEventListener("click", () => {
 });
 
 canvas.addEventListener("click", () => {
-  if (environmentLoaded && document.pointerLockElement !== canvas) void canvas.requestPointerLock();
+  if (environmentLoaded && document.pointerLockElement !== canvas) {
+    void canvas.requestPointerLock();
+  }
 });
 
 document.addEventListener("pointerlockchange", () => {
-  document.body.classList.toggle("playing", document.pointerLockElement === canvas);
+  const active = document.pointerLockElement === canvas;
+  document.body.classList.toggle("playing", active);
+  if (!active) keys.clear();
 });
 
 document.addEventListener("mousemove", (event) => {
   if (document.pointerLockElement !== canvas) return;
   cameraYaw -= event.movementX * 0.075;
-  cameraPitch += event.movementY * 0.055;
+  cameraPitch -= event.movementY * 0.075;
   cameraPitch = THREE.MathUtils.clamp(cameraPitch, CAMERA_MIN_PITCH, CAMERA_MAX_PITCH);
 });
 
-// Wheel up zooms in; wheel down zooms out. Works with pointer lock and when
-// hovering the canvas before entering. Delta mode is normalized for mice
-// that report lines or pages instead of pixels.
+// Preserve the recently added mouse-wheel zoom as a first-person FOV change.
+// Scrolling up narrows FOV (magnifies), scrolling down widens FOV.
 canvas.addEventListener("wheel", (event) => {
   event.preventDefault();
-  const deltaPixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1);
-  targetCameraDistance = THREE.MathUtils.clamp(
-    targetCameraDistance * Math.exp(deltaPixels * CAMERA_ZOOM_SPEED),
-    CAMERA_MIN_DISTANCE,
-    CAMERA_MAX_DISTANCE,
+  const deltaPixels = event.deltaY
+    * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1);
+  targetFov = THREE.MathUtils.clamp(
+    targetFov + deltaPixels * FOV_ZOOM_SENSITIVITY,
+    MIN_FOV,
+    MAX_FOV,
   );
 }, { passive: false });
 
@@ -688,8 +435,8 @@ document.addEventListener("keydown", (event) => {
   keys.add(event.code);
   if (event.code === "KeyR") resetPlayer();
 });
-
 document.addEventListener("keyup", (event) => keys.delete(event.code));
+window.addEventListener("blur", () => keys.clear());
 resetButton.addEventListener("click", resetPlayer);
 
 fullscreenButton.addEventListener("click", async () => {
@@ -700,13 +447,10 @@ fullscreenButton.addEventListener("click", async () => {
 let perfFrames = 0;
 let perfSeconds = 0;
 let perfCpuMs = 0;
-
 scene.app.on("update", (dt: number) => {
   const start = performance.now();
   tickPlayer(dt);
   updateVisualPlayer(dt);
-  animateCharacter(dt);
-  updateCharacterTransform();
   updateCamera(dt);
 
   perfFrames += 1;
